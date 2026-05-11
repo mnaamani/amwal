@@ -1,0 +1,15 @@
+Enum "account_type" {
+  "asset"
+  "liability"
+  "equity"
+  "revenue"
+  "expense"
+}
+
+Table "ledger_accounts" {
+  "id" SERIAL [pk, increment]
+  "type" account_type [not null]
+  "name" varchar [not null]
+  "active" bool [not null, default: false]
+  "created_at" timestamp [not null]
+}
