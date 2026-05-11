@@ -18,7 +18,7 @@ pub enum AccountType {
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Account {
     pub id: i32,
-    pub type_: AccountType,
+    pub account_type: AccountType,
     pub active: bool,
     pub name: String,
     pub created_at: SystemTime,
@@ -28,4 +28,5 @@ pub struct Account {
 #[diesel(table_name = ledger_accounts)]
 pub struct NewAccount<'a> {
     pub name: &'a str,
+    pub account_type: AccountType,
 }

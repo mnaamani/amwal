@@ -2,7 +2,7 @@ use diesel::prelude::*;
 use dotenvy::dotenv;
 use std::env;
 
-use crate::models::NewAccount;
+use crate::models::{NewAccount, AccountType, Account};
 
 pub mod models;
 pub mod schema;
@@ -15,13 +15,13 @@ pub fn db_connect() -> PgConnection {
         .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
 }
 
-pub fn create_account(conn: &mut PgConnection, name: &str) -> models::Account {
+pub fn create_account(conn: &mut PgConnection, name: &str, account_type: AccountType) -> Account {
     use crate::schema::ledger_accounts;
-    let new_account = NewAccount { name };
+    let new_account = NewAccount { name, account_type };
 
     diesel::insert_into(ledger_accounts::table)
         .values(&new_account)
-        .returning(models::Account::as_returning())
+        .returning(Account::as_returning())
         .get_result(conn)
         .expect("Error Creating Account")
 }

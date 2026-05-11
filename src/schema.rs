@@ -12,8 +12,7 @@ diesel::table! {
 
     ledger_accounts (id) {
         id -> Int4,
-        #[sql_name = "type"]
-        type_ -> AccountType,
+        account_type -> AccountType,
         name -> Varchar,
         active -> Bool,
         created_at -> Timestamp,

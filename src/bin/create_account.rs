@@ -1,4 +1,5 @@
 use ledger::{create_account, db_connect};
+use ledger::models::AccountType;
 use std::io::stdin;
 
 fn main() {
@@ -9,6 +10,6 @@ fn main() {
     stdin().read_line(&mut account_name).unwrap();
     let account_name = account_name.trim();
 
-    let new_account = create_account(conn, &account_name);
+    let new_account = create_account(conn, &account_name, AccountType::Asset);
     println!("Created Account id = {}", new_account.id);
 }

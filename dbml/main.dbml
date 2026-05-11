@@ -11,5 +11,5 @@ Table "ledger_accounts" {
   "type" account_type [not null]
   "name" varchar [not null]
   "active" bool [not null, default: false]
-  "created_at" timestamp [not null]
+  "created_at" timestamp [not null, default: `now()`]
 }

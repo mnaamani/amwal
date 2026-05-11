@@ -66,7 +66,7 @@ GraphQL? I don't think we need GraphQL for the ledger? GRPC? ->
 ## Database Schema Design/Migrations etc..
 Pure Diesel?
 Prisma for schema design, migrations? Or use a tool like https://dbdiagram.io define Database schema in
-DBML https://dbml.dbdiagram.io/home
+DBML https://dbml.dbdiagram.io/home - use cli `npx -p @dbml/cli dbml2sql dbml/main.dml -o migrations/new_migration/up.sql`
 Diesel can generate Rust types from the database schema.
 `diesel print-schema` -> schema.rs
 
