@@ -1,17 +1,9 @@
-use self::models::*;
-use diesel::prelude::*;
-use ledger::*;
+use ledger::{db_connect, get_active_accounts};
 
 fn main() {
-    use self::schema::accounts::dsl::*;
-
     let connection = &mut db_connect();
-    let results = accounts
-        .filter(active.eq(true))
-        .limit(5)
-        .select(Account::as_select())
-        .load(connection)
-        .expect("Error loading accounts");
+
+    let results = get_active_accounts(connection).unwrap();
 
     println!("Displaying {} accounts", results.len());
     for account in results {

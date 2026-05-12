@@ -1,11 +1,7 @@
-use self::models::Account;
-use diesel::prelude::*;
-use ledger::*;
+use ledger::{db_connect, get_account};
 use std::env::args;
 
 fn main() {
-    use self::schema::accounts::dsl::accounts;
-
     let account_id = args()
         .nth(1)
         .expect("get_accounts requires an account id")
@@ -14,11 +10,7 @@ fn main() {
 
     let connection = &mut db_connect();
 
-    let account = accounts
-        .find(account_id)
-        .select(Account::as_select())
-        .first(connection)
-        .optional(); // This allows for returning an Option<Post>, otherwise it will throw an error
+    let account = get_account(connection, account_id);
 
     match account {
         Ok(Some(account)) => println!("Account id: {} name: {}", account.id, account.name),

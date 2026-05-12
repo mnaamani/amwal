@@ -15,6 +15,6 @@ fn main() {
     stdin().read_line(&mut account_type).unwrap();
     let account_type: AccountType = account_type.trim().parse().unwrap();
 
-    let new_account = create_account(conn, &account_name, account_type);
+    let new_account = create_account(conn, &account_name, account_type).unwrap();
     println!("Created Account id = {}", new_account.id);
 }
