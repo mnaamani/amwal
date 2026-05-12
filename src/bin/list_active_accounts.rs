@@ -15,6 +15,6 @@ fn main() {
 
     println!("Displaying {} accounts", results.len());
     for account in results {
-        println!("id={} name={}", account.id, account.name);
+        println!("account id: {} name: {}", account.id, account.name);
     }
 }

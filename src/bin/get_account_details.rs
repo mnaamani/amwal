@@ -21,7 +21,7 @@ fn main() {
         .optional(); // This allows for returning an Option<Post>, otherwise it will throw an error
 
     match account {
-        Ok(Some(account)) => println!("Account with id: {} has name: {}", account.id, account.name),
+        Ok(Some(account)) => println!("Account id: {} name: {}", account.id, account.name),
         Ok(None) => println!("Unable to find account {}", account_id),
         Err(_) => println!("An error occured while fetching account {}", account_id),
     }

@@ -1,6 +1,6 @@
 use crate::schema::accounts;
 use diesel::prelude::*;
-use std::time::SystemTime;
+use std::{str::FromStr, time::SystemTime};
 
 // When deriving the Enum here, there will be a duplicate Clone trait
 // derived on the existing type, manually remove it there to fix compiler error
@@ -12,6 +12,24 @@ pub enum AccountType {
     Equity,
     Revenue,
     Expense,
+}
+
+#[derive(Debug)]
+pub struct ParseAccountTypeError;
+
+impl FromStr for AccountType {
+    type Err = ParseAccountTypeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Asset" | "asset" => Ok(AccountType::Asset),
+            "Liability" | "liability" => Ok(AccountType::Liability),
+            "Equity" | "equity" => Ok(AccountType::Equity),
+            "Revenue" | "revenue" => Ok(AccountType::Revenue),
+            "Expense" | "expense" => Ok(AccountType::Expense),
+            _ => Err(ParseAccountTypeError),
+        }
+    }
 }
 
 // When deriving the Enum here, there will be a duplicate Clone trait
