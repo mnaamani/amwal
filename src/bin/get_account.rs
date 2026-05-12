@@ -4,7 +4,7 @@ use ledger::*;
 use std::env::args;
 
 fn main() {
-    use self::schema::ledger_accounts::dsl::ledger_accounts;
+    use self::schema::accounts::dsl::accounts;
 
     let account_id = args()
         .nth(1)
@@ -14,7 +14,7 @@ fn main() {
 
     let connection = &mut db_connect();
 
-    let account = ledger_accounts
+    let account = accounts
         .find(account_id)
         .select(Account::as_select())
         .first(connection)

@@ -4,7 +4,7 @@ use ledger::models::Account;
 use std::env::args;
 
 fn main() {
-    use ledger::schema::ledger_accounts::dsl::{active, ledger_accounts};
+    use ledger::schema::accounts::dsl::{accounts, active};
 
     let id = args()
         .nth(1)
@@ -14,7 +14,7 @@ fn main() {
 
     let conn = &mut db_connect();
 
-    let account = diesel::update(ledger_accounts.find(id))
+    let account = diesel::update(accounts.find(id))
         .set(active.eq(true))
         .returning(Account::as_returning())
         .get_result(conn)

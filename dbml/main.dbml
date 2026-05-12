@@ -1,3 +1,6 @@
+// If npx -p @dbml/cli dbml2sql dbml/main.dml -o migrations/new_migration/up.sql fails use the playground
+// https://dbml.dbdiagram.io/playground/
+
 Enum "account_type" {
   "asset"
   "liability"
@@ -6,10 +9,62 @@ Enum "account_type" {
   "expense"
 }
 
-Table "ledger_accounts" {
+Enum "transfer_status" {
+  "pending"
+  "canceled"
+  "completed"
+}
+
+Table "accounts" {
   "id" SERIAL [pk, increment]
-  "type" account_type [not null]
+  "account_type" account_type [not null]
   "name" varchar [not null]
   "active" bool [not null, default: false]
   "created_at" timestamp [not null, default: `now()`]
+  "updated_at" timestamp
+}
+
+Table "movements" {
+  id SERIAL [pk, increment]
+  tx integer [ref: > transactions.id]
+  account integer [ref: - accounts.id]
+  debit integer
+  credit integer
+  "created_at" timestamp [not null, default: `now()`]
+}
+
+Table "transactions" {
+  "id" SERIAL [pk, increment]
+  commited bool [default: false]
+  "created_at" timestamp [not null, default: `now()`]
+  "updated_at" timestamp
+}
+
+Table balances {
+  account_id integer [pk, ref: - accounts.id]
+  commited_balance integer
+  blocked integer
+  "updated_at" timestamp [not null, default: `now()`]
+}
+
+// Temporary table to hold blocked amounts on an account.
+// Record should be removed when the amount is unblocked
+Table account_blocks {
+  id SERIAL [pk, increment]
+  account_id integer [ref: -accounts.id]
+  amount integer
+  created_at timestamp [not null, default: `now()`]
+  transaction_id integer [ref: - transactions.id]
+  // memo ? reference to reason for block ? or it can be inferred by following transaction id ref.
+}
+
+Table transfer_internal {
+  id SERIAL [pk, increment]
+  transaction_id integer [ref: - transactions.id]
+  from_account_id integer [ref: - accounts.id]
+  to_account_id integer [ref: - accounts.id]
+  amount integer
+  initiated_at timestamp [default: `now()`]
+  completed_at timestamp
+  status transfer_status
 }

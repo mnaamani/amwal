@@ -1,5 +1,5 @@
-use ledger::{create_account, db_connect};
 use ledger::models::AccountType;
+use ledger::{create_account, db_connect};
 use std::io::stdin;
 
 fn main() {

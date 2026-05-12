@@ -3,10 +3,10 @@ use diesel::prelude::*;
 use ledger::*;
 
 fn main() {
-    use self::schema::ledger_accounts::dsl::*;
+    use self::schema::accounts::dsl::*;
 
     let connection = &mut db_connect();
-    let results = ledger_accounts
+    let results = accounts
         .filter(active.eq(true))
         .limit(5)
         .select(Account::as_select())
