@@ -4,6 +4,7 @@ use std::env;
 
 use crate::models::{Account, AccountType, NewAccount};
 
+pub mod errors;
 pub mod models;
 // Keep schema private, hide the details from the application. They only need to know about the models
 mod schema;
