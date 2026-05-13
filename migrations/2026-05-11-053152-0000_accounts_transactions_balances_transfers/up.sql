@@ -1,3 +1,7 @@
+-- SQL dump generated using DBML (dbml.dbdiagram.io)
+-- Database: PostgreSQL
+-- Generated at: 2026-05-13T06:30:17.319Z
+
 CREATE TYPE "account_type" AS ENUM (
   'asset',
   'liability',
@@ -8,7 +12,7 @@ CREATE TYPE "account_type" AS ENUM (
 
 CREATE TYPE "transfer_status" AS ENUM (
   'pending',
-  'canceled',
+  'cancelled',
   'completed'
 );
 
@@ -23,44 +27,45 @@ CREATE TABLE "accounts" (
 
 CREATE TABLE "movements" (
   "id" SERIAL PRIMARY KEY,
-  "tx" integer,
-  "account" integer,
-  "debit" integer,
-  "credit" integer,
-  "created_at" timestamp NOT NULL DEFAULT (now())
+  "tx" integer NOT NULL,
+  "account" integer NOT NULL,
+  "debit" integer NOT NULL DEFAULT 0,
+  "credit" integer NOT NULL DEFAULT 0,
+  "created_at" timestamp NOT NULL DEFAULT (now()),
+  CONSTRAINT "movements_valid_leg" CHECK (debit >= 0 AND credit >= 0 AND (debit > 0) != (credit > 0))
 );
 
 CREATE TABLE "transactions" (
   "id" SERIAL PRIMARY KEY,
-  "commited" bool DEFAULT false,
+  "commited" bool NOT NULL DEFAULT false,
   "created_at" timestamp NOT NULL DEFAULT (now()),
   "updated_at" timestamp
 );
 
 CREATE TABLE "balances" (
   "account_id" integer PRIMARY KEY,
-  "commited_balance" integer,
-  "blocked" integer,
+  "commited_balance" integer NOT NULL DEFAULT 0,
+  "blocked" integer NOT NULL DEFAULT 0,
   "updated_at" timestamp NOT NULL DEFAULT (now())
 );
 
 CREATE TABLE "account_blocks" (
   "id" SERIAL PRIMARY KEY,
-  "account_id" integer,
-  "amount" integer,
+  "account_id" integer NOT NULL,
+  "amount" integer NOT NULL,
   "created_at" timestamp NOT NULL DEFAULT (now()),
-  "transaction_id" integer
+  "transaction_id" integer NOT NULL
 );
 
 CREATE TABLE "transfer_internal" (
   "id" SERIAL PRIMARY KEY,
-  "transaction_id" integer,
-  "from_account_id" integer,
-  "to_account_id" integer,
-  "amount" integer,
-  "initiated_at" timestamp DEFAULT (now()),
+  "transaction_id" integer NOT NULL,
+  "from_account_id" integer NOT NULL,
+  "to_account_id" integer NOT NULL,
+  "amount" integer NOT NULL,
+  "initiated_at" timestamp NOT NULL DEFAULT (now()),
   "completed_at" timestamp,
-  "status" transfer_status
+  "status" transfer_status NOT NULL
 );
 
 ALTER TABLE "movements" ADD FOREIGN KEY ("tx") REFERENCES "transactions" ("id") DEFERRABLE INITIALLY IMMEDIATE;

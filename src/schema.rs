@@ -13,10 +13,10 @@ pub mod sql_types {
 diesel::table! {
     account_blocks (id) {
         id -> Int4,
-        account_id -> Nullable<Int4>,
-        amount -> Nullable<Int4>,
+        account_id -> Int4,
+        amount -> Int4,
         created_at -> Timestamp,
-        transaction_id -> Nullable<Int4>,
+        transaction_id -> Int4,
     }
 }
 
@@ -37,8 +37,8 @@ diesel::table! {
 diesel::table! {
     balances (account_id) {
         account_id -> Int4,
-        commited_balance -> Nullable<Int4>,
-        blocked -> Nullable<Int4>,
+        commited_balance -> Int4,
+        blocked -> Int4,
         updated_at -> Timestamp,
     }
 }
@@ -46,10 +46,10 @@ diesel::table! {
 diesel::table! {
     movements (id) {
         id -> Int4,
-        tx -> Nullable<Int4>,
-        account -> Nullable<Int4>,
-        debit -> Nullable<Int4>,
-        credit -> Nullable<Int4>,
+        tx -> Int4,
+        account -> Int4,
+        debit -> Int4,
+        credit -> Int4,
         created_at -> Timestamp,
     }
 }
@@ -57,7 +57,7 @@ diesel::table! {
 diesel::table! {
     transactions (id) {
         id -> Int4,
-        commited -> Nullable<Bool>,
+        commited -> Bool,
         created_at -> Timestamp,
         updated_at -> Nullable<Timestamp>,
     }
@@ -69,13 +69,13 @@ diesel::table! {
 
     transfer_internal (id) {
         id -> Int4,
-        transaction_id -> Nullable<Int4>,
-        from_account_id -> Nullable<Int4>,
-        to_account_id -> Nullable<Int4>,
-        amount -> Nullable<Int4>,
-        initiated_at -> Nullable<Timestamp>,
+        transaction_id -> Int4,
+        from_account_id -> Int4,
+        to_account_id -> Int4,
+        amount -> Int4,
+        initiated_at -> Timestamp,
         completed_at -> Nullable<Timestamp>,
-        status -> Nullable<TransferStatus>,
+        status -> TransferStatus,
     }
 }
 
