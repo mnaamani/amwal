@@ -33,7 +33,10 @@ pub fn activate_account(conn: &mut PgConnection, id: AccountId) -> Result<Accoun
 
         // Seed a zero balance row; on_conflict_do_nothing guards against double-activation
         diesel::insert_into(balances::table)
-            .values(NewBalance { account_id: id, balance: 0 })
+            .values(NewBalance {
+                account_id: id,
+                balance: 0,
+            })
             .on_conflict_do_nothing()
             .execute(conn)
             .map_err(LedgerError::from)?;
