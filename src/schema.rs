@@ -37,7 +37,7 @@ diesel::table! {
 diesel::table! {
     balances (account_id) {
         account_id -> Int4,
-        commited_balance -> Int4,
+        balance -> Int4,
         blocked -> Int4,
         updated_at -> Timestamp,
     }

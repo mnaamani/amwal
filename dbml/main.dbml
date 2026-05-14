@@ -45,7 +45,7 @@ Table "transactions" {
 
 Table balances {
   account_id integer [pk, ref: - accounts.id]
-  commited_balance integer [not null, default: 0]
+  balance integer [not null, default: 0]
   blocked integer [not null, default: 0]
   "updated_at" timestamp [not null, default: `now()`]
 }

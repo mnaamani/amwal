@@ -1,6 +1,6 @@
 -- SQL dump generated using DBML (dbml.dbdiagram.io)
 -- Database: PostgreSQL
--- Generated at: 2026-05-14T03:50:38.547Z
+-- Generated at: 2026-05-14T03:59:37.744Z
 
 CREATE TYPE "account_type" AS ENUM (
   'asset',
@@ -43,7 +43,7 @@ CREATE TABLE "transactions" (
 
 CREATE TABLE "balances" (
   "account_id" integer PRIMARY KEY,
-  "commited_balance" integer NOT NULL DEFAULT 0,
+  "balance" integer NOT NULL DEFAULT 0,
   "blocked" integer NOT NULL DEFAULT 0,
   "updated_at" timestamp NOT NULL DEFAULT (now())
 );

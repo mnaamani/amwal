@@ -110,7 +110,7 @@ pub struct NewMovementInput {
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Balance {
     pub account_id: AccountId,
-    pub commited_balance: i32,
+    pub balance: i32,
     pub blocked: i32,
     pub updated_at: SystemTime,
 }
@@ -119,7 +119,7 @@ pub struct Balance {
 #[diesel(table_name = balances)]
 pub struct NewBalance {
     pub account_id: AccountId,
-    pub commited_balance: i32,
+    pub balance: i32,
     pub blocked: i32,
 }
 
