@@ -1,7 +1,9 @@
+use std::time::SystemTime;
+
 use diesel::prelude::*;
 
 use crate::errors::LedgerError;
-use crate::models::{Account, AccountId, AccountType, NewAccount};
+use crate::models::{Account, AccountId, AccountType, NewAccount, NewBalance};
 
 pub fn create_account(
     conn: &mut PgConnection,
@@ -19,13 +21,25 @@ pub fn create_account(
 }
 
 pub fn activate_account(conn: &mut PgConnection, id: AccountId) -> Result<Account, LedgerError> {
-    use crate::schema::accounts::dsl::{accounts, active};
+    use crate::schema::accounts::dsl::{accounts, active, updated_at};
+    use crate::schema::balances;
 
-    diesel::update(accounts.find(id))
-        .set(active.eq(true))
-        .returning(Account::as_returning())
-        .get_result(conn)
-        .map_err(LedgerError::from)
+    conn.transaction::<Account, LedgerError, _>(|conn| {
+        let account = diesel::update(accounts.find(id))
+            .set((active.eq(true), updated_at.eq(SystemTime::now())))
+            .returning(Account::as_returning())
+            .get_result(conn)
+            .map_err(LedgerError::from)?;
+
+        // Seed a zero balance row; on_conflict_do_nothing guards against double-activation
+        diesel::insert_into(balances::table)
+            .values(NewBalance { account_id: id, balance: 0 })
+            .on_conflict_do_nothing()
+            .execute(conn)
+            .map_err(LedgerError::from)?;
+
+        Ok(account)
+    })
 }
 
 pub fn delete_account(conn: &mut PgConnection, pattern: &str) -> Result<usize, LedgerError> {
