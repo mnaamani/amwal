@@ -1,6 +1,4 @@
-use crate::schema::{
-    account_blocks, accounts, balances, movements, transactions, transfer_internal,
-};
+use crate::schema::{account_blocks, accounts, balances, movements, transfer_internal};
 use diesel::prelude::*;
 use std::{str::FromStr, time::SystemTime};
 
@@ -73,15 +71,8 @@ pub struct NewAccount<'a> {
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Transaction {
     pub id: TransactionId,
-    pub commited: bool,
     pub created_at: SystemTime,
     pub updated_at: Option<SystemTime>,
-}
-
-#[derive(Insertable)]
-#[diesel(table_name = transactions)]
-pub struct NewTransaction {
-    pub commited: bool,
 }
 
 #[derive(Queryable, Selectable, Identifiable)]
@@ -140,7 +131,7 @@ pub struct AccountBlock {
     pub account_id: AccountId,
     pub amount: i32,
     pub created_at: SystemTime,
-    pub transaction_id: TransactionId,
+    pub transfer_id: TransferInternalId,
 }
 
 #[derive(Insertable)]
@@ -148,7 +139,7 @@ pub struct AccountBlock {
 pub struct NewAccountBlock {
     pub account_id: AccountId,
     pub amount: i32,
-    pub transaction_id: TransactionId,
+    pub transfer_id: TransferInternalId,
 }
 
 #[derive(Queryable, Selectable, Identifiable)]
@@ -156,7 +147,7 @@ pub struct NewAccountBlock {
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct TransferInternal {
     pub id: TransferInternalId,
-    pub transaction_id: TransactionId,
+    pub transaction_id: Option<TransactionId>,
     pub from_account_id: AccountId,
     pub to_account_id: AccountId,
     pub amount: i32,
@@ -168,7 +159,6 @@ pub struct TransferInternal {
 #[derive(Insertable)]
 #[diesel(table_name = transfer_internal)]
 pub struct NewTransferInternal {
-    pub transaction_id: TransactionId,
     pub from_account_id: AccountId,
     pub to_account_id: AccountId,
     pub amount: i32,

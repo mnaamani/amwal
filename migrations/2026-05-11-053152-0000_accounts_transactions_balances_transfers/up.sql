@@ -1,6 +1,6 @@
 -- SQL dump generated using DBML (dbml.dbdiagram.io)
 -- Database: PostgreSQL
--- Generated at: 2026-05-13T06:30:17.319Z
+-- Generated at: 2026-05-14T03:50:38.547Z
 
 CREATE TYPE "account_type" AS ENUM (
   'asset',
@@ -37,7 +37,6 @@ CREATE TABLE "movements" (
 
 CREATE TABLE "transactions" (
   "id" SERIAL PRIMARY KEY,
-  "commited" bool NOT NULL DEFAULT false,
   "created_at" timestamp NOT NULL DEFAULT (now()),
   "updated_at" timestamp
 );
@@ -54,12 +53,12 @@ CREATE TABLE "account_blocks" (
   "account_id" integer NOT NULL,
   "amount" integer NOT NULL,
   "created_at" timestamp NOT NULL DEFAULT (now()),
-  "transaction_id" integer NOT NULL
+  "transfer_id" integer NOT NULL
 );
 
 CREATE TABLE "transfer_internal" (
   "id" SERIAL PRIMARY KEY,
-  "transaction_id" integer NOT NULL,
+  "transaction_id" integer,
   "from_account_id" integer NOT NULL,
   "to_account_id" integer NOT NULL,
   "amount" integer NOT NULL,
@@ -76,7 +75,7 @@ ALTER TABLE "balances" ADD FOREIGN KEY ("account_id") REFERENCES "accounts" ("id
 
 ALTER TABLE "account_blocks" ADD FOREIGN KEY ("account_id") REFERENCES "accounts" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
-ALTER TABLE "account_blocks" ADD FOREIGN KEY ("transaction_id") REFERENCES "transactions" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "account_blocks" ADD FOREIGN KEY ("transfer_id") REFERENCES "transfer_internal" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "transfer_internal" ADD FOREIGN KEY ("transaction_id") REFERENCES "transactions" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 

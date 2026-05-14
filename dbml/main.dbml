@@ -39,7 +39,6 @@ Table "movements" {
 
 Table "transactions" {
   "id" SERIAL [pk, increment]
-  commited bool [not null, default: false]
   "created_at" timestamp [not null, default: `now()`]
   "updated_at" timestamp
 }
@@ -55,16 +54,15 @@ Table balances {
 // Record should be removed when the amount is unblocked
 Table account_blocks {
   id SERIAL [pk, increment]
-  account_id integer [not null, ref: -accounts.id]
+  account_id integer [not null, ref: - accounts.id]
   amount integer [not null]
   created_at timestamp [not null, default: `now()`]
-  transaction_id integer [not null, ref: - transactions.id]
-  // memo ? reference to reason for block ? or it can be inferred by following transaction id ref.
+  transfer_id integer [not null, ref: - transfer_internal.id]
 }
 
 Table transfer_internal {
   id SERIAL [pk, increment]
-  transaction_id integer [not null, ref: - transactions.id]
+  transaction_id integer [ref: - transactions.id]
   from_account_id integer [not null, ref: - accounts.id]
   to_account_id integer [not null, ref: - accounts.id]
   amount integer [not null]

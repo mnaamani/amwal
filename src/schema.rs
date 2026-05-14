@@ -16,7 +16,7 @@ diesel::table! {
         account_id -> Int4,
         amount -> Int4,
         created_at -> Timestamp,
-        transaction_id -> Int4,
+        transfer_id -> Int4,
     }
 }
 
@@ -57,7 +57,6 @@ diesel::table! {
 diesel::table! {
     transactions (id) {
         id -> Int4,
-        commited -> Bool,
         created_at -> Timestamp,
         updated_at -> Nullable<Timestamp>,
     }
@@ -69,7 +68,7 @@ diesel::table! {
 
     transfer_internal (id) {
         id -> Int4,
-        transaction_id -> Int4,
+        transaction_id -> Nullable<Int4>,
         from_account_id -> Int4,
         to_account_id -> Int4,
         amount -> Int4,
@@ -80,7 +79,7 @@ diesel::table! {
 }
 
 diesel::joinable!(account_blocks -> accounts (account_id));
-diesel::joinable!(account_blocks -> transactions (transaction_id));
+diesel::joinable!(account_blocks -> transfer_internal (transfer_id));
 diesel::joinable!(balances -> accounts (account_id));
 diesel::joinable!(movements -> accounts (account));
 diesel::joinable!(movements -> transactions (tx));
