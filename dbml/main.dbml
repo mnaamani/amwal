@@ -46,8 +46,15 @@ Table "transactions" {
 Table balances {
   account_id integer [pk, ref: - accounts.id]
   balance integer [not null, default: 0]
+  // Do we really need to track blocked amount? We can sum the total 
+  // blocked amount from account_blocks
   blocked integer [not null, default: 0]
   "updated_at" timestamp [not null, default: `now()`]
+  // last transaction which updated the balance..serves idempotency?
+  // we only really need it if balance is not updated atomically with transaction entry.
+  // We can add a check to ensure the transaction has at least on debit or credit affecting this account,
+  // and maybe that the transaction.created_at > last updated_at of the balance.
+  // last_transaction integer [ref: - transactions.id]
 }
 
 // Temporary table to hold blocked amounts on an account.
@@ -57,11 +64,15 @@ Table account_blocks {
   account_id integer [not null, ref: - accounts.id]
   amount integer [not null]
   created_at timestamp [not null, default: `now()`]
+  // serves as an idempotency key.. but in that case we shouldn't delete the block record, so
+  // instead we add a check to ensure adding a block for a transfer id is only allowed
+  // if the transfer is pending. We should also make the field UNIQUE?
   transfer_id integer [not null, ref: - transfer_internal.id]
 }
 
 Table transfer_internal {
   id SERIAL [pk, increment]
+  // transaction which was recorded when transfer was successfully completed
   transaction_id integer [ref: - transactions.id]
   from_account_id integer [not null, ref: - accounts.id]
   to_account_id integer [not null, ref: - accounts.id]
