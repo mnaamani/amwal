@@ -1,4 +1,4 @@
-// If npx -p @dbml/cli dbml2sql dbml/main.dml -o migrations/new_migration/up.sql fails use the playground
+// If npx -p @dbml/cli dbml2sql dbml/main.dml --postgres -o migrations/new_migration/up.sql fails use the playground
 // https://dbml.dbdiagram.io/playground/
 
 Enum "account_type" {
@@ -64,6 +64,8 @@ Table account_blocks {
   // serves as an idempotency key.. but in that case we shouldn't delete the block record, so
   // instead we add a check to ensure adding a block for a transfer id is only allowed
   // if the transfer is pending. We should also make the field UNIQUE?
+  // what if the block is for another reason, should we have a multiple references
+  // with "OneOf" semantics.. or just a single reference to a global event id?
   transfer_id integer [not null, unique, ref: - transfer_internal.id]
 }
 
@@ -74,7 +76,7 @@ Table transfer_internal {
   from_account_id integer [not null, ref: - accounts.id]
   to_account_id integer [not null, ref: - accounts.id]
   amount integer [not null]
-  initiated_at timestamp [not null, default: `now()`]
+  created_at timestamp [not null, default: `now()`]
   completed_at timestamp
   status transfer_status [not null]
 }

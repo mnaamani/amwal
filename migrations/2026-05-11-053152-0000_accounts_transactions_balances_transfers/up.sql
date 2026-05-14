@@ -61,7 +61,7 @@ CREATE TABLE "transfer_internal" (
   "from_account_id" integer NOT NULL,
   "to_account_id" integer NOT NULL,
   "amount" integer NOT NULL,
-  "initiated_at" timestamp NOT NULL DEFAULT (now()),
+  "created_at" timestamp NOT NULL DEFAULT (now()),
   "completed_at" timestamp,
   "status" transfer_status NOT NULL
 );

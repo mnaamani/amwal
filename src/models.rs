@@ -149,7 +149,7 @@ pub struct TransferInternal {
     pub from_account_id: AccountId,
     pub to_account_id: AccountId,
     pub amount: i32,
-    pub initiated_at: SystemTime,
+    pub created_at: SystemTime,
     pub completed_at: Option<SystemTime>,
     pub status: TransferStatus,
 }
