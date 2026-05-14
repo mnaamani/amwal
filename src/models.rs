@@ -111,7 +111,6 @@ pub struct NewMovementInput {
 pub struct Balance {
     pub account_id: AccountId,
     pub balance: i32,
-    pub blocked: i32,
     pub updated_at: SystemTime,
 }
 
@@ -120,7 +119,6 @@ pub struct Balance {
 pub struct NewBalance {
     pub account_id: AccountId,
     pub balance: i32,
-    pub blocked: i32,
 }
 
 #[derive(Queryable, Selectable, Identifiable)]
