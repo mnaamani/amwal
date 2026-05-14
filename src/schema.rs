@@ -51,7 +51,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    journal_lines (id) {
+    ledger_lines (id) {
         id -> Int4,
         journal_entry_id -> Int4,
         account -> Int4,
@@ -80,8 +80,8 @@ diesel::table! {
 diesel::joinable!(account_blocks -> accounts (account_id));
 diesel::joinable!(account_blocks -> transfer_internal (transfer_id));
 diesel::joinable!(balances -> accounts (account_id));
-diesel::joinable!(journal_lines -> accounts (account));
-diesel::joinable!(journal_lines -> journal_entries (journal_entry_id));
+diesel::joinable!(ledger_lines -> accounts (account));
+diesel::joinable!(ledger_lines -> journal_entries (journal_entry_id));
 diesel::joinable!(transfer_internal -> journal_entries (journal_entry_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
@@ -89,6 +89,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     accounts,
     balances,
     journal_entries,
-    journal_lines,
+    ledger_lines,
     transfer_internal,
 );
