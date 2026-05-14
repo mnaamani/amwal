@@ -43,21 +43,21 @@ diesel::table! {
 }
 
 diesel::table! {
-    movements (id) {
+    journal_entries (id) {
         id -> Int4,
-        tx -> Int4,
-        account -> Int4,
-        debit -> Int4,
-        credit -> Int4,
         created_at -> Timestamp,
+        updated_at -> Nullable<Timestamp>,
     }
 }
 
 diesel::table! {
-    transactions (id) {
+    journal_lines (id) {
         id -> Int4,
+        journal_entry_id -> Int4,
+        account -> Int4,
+        debit -> Int4,
+        credit -> Int4,
         created_at -> Timestamp,
-        updated_at -> Nullable<Timestamp>,
     }
 }
 
@@ -67,11 +67,11 @@ diesel::table! {
 
     transfer_internal (id) {
         id -> Int4,
-        transaction_id -> Nullable<Int4>,
+        journal_entry_id -> Nullable<Int4>,
         from_account_id -> Int4,
         to_account_id -> Int4,
         amount -> Int4,
-        initiated_at -> Timestamp,
+        created_at -> Timestamp,
         completed_at -> Nullable<Timestamp>,
         status -> TransferStatus,
     }
@@ -80,15 +80,15 @@ diesel::table! {
 diesel::joinable!(account_blocks -> accounts (account_id));
 diesel::joinable!(account_blocks -> transfer_internal (transfer_id));
 diesel::joinable!(balances -> accounts (account_id));
-diesel::joinable!(movements -> accounts (account));
-diesel::joinable!(movements -> transactions (tx));
-diesel::joinable!(transfer_internal -> transactions (transaction_id));
+diesel::joinable!(journal_lines -> accounts (account));
+diesel::joinable!(journal_lines -> journal_entries (journal_entry_id));
+diesel::joinable!(transfer_internal -> journal_entries (journal_entry_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     account_blocks,
     accounts,
     balances,
-    movements,
-    transactions,
+    journal_entries,
+    journal_lines,
     transfer_internal,
 );

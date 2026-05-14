@@ -1,10 +1,10 @@
-use crate::schema::{account_blocks, accounts, balances, movements, transfer_internal};
+use crate::schema::{account_blocks, accounts, balances, journal_lines, transfer_internal};
 use diesel::prelude::*;
 use std::{str::FromStr, time::SystemTime};
 
 pub type AccountId = i32;
-pub type TransactionId = i32;
-pub type MovementId = i32;
+pub type JournalEntryId = i32;
+pub type JournalLineId = i32;
 pub type AccountBlockId = i32;
 pub type TransferInternalId = i32;
 
@@ -67,20 +67,20 @@ pub struct NewAccount<'a> {
 }
 
 #[derive(Queryable, Selectable, Identifiable)]
-#[diesel(table_name = crate::schema::transactions)]
+#[diesel(table_name = crate::schema::journal_entries)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct Transaction {
-    pub id: TransactionId,
+pub struct JournalEntry {
+    pub id: JournalEntryId,
     pub created_at: SystemTime,
     pub updated_at: Option<SystemTime>,
 }
 
 #[derive(Queryable, Selectable, Identifiable)]
-#[diesel(table_name = crate::schema::movements)]
+#[diesel(table_name = crate::schema::journal_lines)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct Movement {
-    pub id: MovementId,
-    pub tx: TransactionId,
+pub struct JournalLine {
+    pub id: JournalLineId,
+    pub journal_entry_id: JournalEntryId,
     pub account: AccountId,
     pub debit: i32,
     pub credit: i32,
@@ -88,17 +88,17 @@ pub struct Movement {
 }
 
 #[derive(Insertable)]
-#[diesel(table_name = movements)]
-pub struct NewMovement {
-    pub tx: TransactionId,
+#[diesel(table_name = journal_lines)]
+pub struct NewJournalLine {
+    pub journal_entry_id: JournalEntryId,
     pub account: AccountId,
     pub debit: i32,
     pub credit: i32,
 }
 
-/// One leg of a journal entry; not a DB struct, used as input to post_journal_entry.
+/// One leg of a journal entry passed as input to post_journal_entry.
 /// Represent a debit leg with credit = 0 and a credit leg with debit = 0.
-pub struct NewMovementInput {
+pub struct NewJournalLineInput {
     pub account_id: AccountId,
     pub debit: i32,
     pub credit: i32,
@@ -145,7 +145,7 @@ pub struct NewAccountBlock {
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct TransferInternal {
     pub id: TransferInternalId,
-    pub transaction_id: Option<TransactionId>,
+    pub journal_entry_id: Option<JournalEntryId>,
     pub from_account_id: AccountId,
     pub to_account_id: AccountId,
     pub amount: i32,

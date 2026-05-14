@@ -1,6 +1,6 @@
 -- SQL dump generated using DBML (dbml.dbdiagram.io)
 -- Database: PostgreSQL
--- Generated at: 2026-05-14T05:30:07.496Z
+-- Generated at: 2026-05-14T10:40:41.152Z
 
 CREATE TYPE "account_type" AS ENUM (
   'asset',
@@ -25,17 +25,17 @@ CREATE TABLE "accounts" (
   "updated_at" timestamp
 );
 
-CREATE TABLE "movements" (
+CREATE TABLE "ledger_lines" (
   "id" SERIAL PRIMARY KEY,
-  "tx" integer NOT NULL,
+  "journal_entry_id" integer NOT NULL,
   "account" integer NOT NULL,
   "debit" integer NOT NULL DEFAULT 0,
   "credit" integer NOT NULL DEFAULT 0,
   "created_at" timestamp NOT NULL DEFAULT (now()),
-  CONSTRAINT "movements_valid_leg" CHECK (debit >= 0 AND credit >= 0 AND (debit > 0) != (credit > 0))
+  CONSTRAINT "ledger_lines_valid_leg" CHECK (debit >= 0 AND credit >= 0 AND (debit > 0) != (credit > 0))
 );
 
-CREATE TABLE "transactions" (
+CREATE TABLE "journal_entries" (
   "id" SERIAL PRIMARY KEY,
   "created_at" timestamp NOT NULL DEFAULT (now()),
   "updated_at" timestamp
@@ -57,7 +57,7 @@ CREATE TABLE "account_blocks" (
 
 CREATE TABLE "transfer_internal" (
   "id" SERIAL PRIMARY KEY,
-  "transaction_id" integer,
+  "journal_entry_id" integer,
   "from_account_id" integer NOT NULL,
   "to_account_id" integer NOT NULL,
   "amount" integer NOT NULL,
@@ -66,9 +66,9 @@ CREATE TABLE "transfer_internal" (
   "status" transfer_status NOT NULL
 );
 
-ALTER TABLE "movements" ADD FOREIGN KEY ("tx") REFERENCES "transactions" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "ledger_lines" ADD FOREIGN KEY ("journal_entry_id") REFERENCES "journal_entries" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
-ALTER TABLE "movements" ADD FOREIGN KEY ("account") REFERENCES "accounts" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "ledger_lines" ADD FOREIGN KEY ("account") REFERENCES "accounts" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "balances" ADD FOREIGN KEY ("account_id") REFERENCES "accounts" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
@@ -76,7 +76,7 @@ ALTER TABLE "account_blocks" ADD FOREIGN KEY ("account_id") REFERENCES "accounts
 
 ALTER TABLE "account_blocks" ADD FOREIGN KEY ("transfer_id") REFERENCES "transfer_internal" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
-ALTER TABLE "transfer_internal" ADD FOREIGN KEY ("transaction_id") REFERENCES "transactions" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "transfer_internal" ADD FOREIGN KEY ("journal_entry_id") REFERENCES "journal_entries" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "transfer_internal" ADD FOREIGN KEY ("from_account_id") REFERENCES "accounts" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 

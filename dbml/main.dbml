@@ -1,4 +1,4 @@
-// If npx -p @dbml/cli dbml2sql dbml/main.dml --postgres -o migrations/new_migration/up.sql fails use the playground
+// If npx -p @dbml/cli dbml2sql dbml/main.dbml --postgres -o migrations/new_migration/up.sql fails use the playground
 // https://dbml.dbdiagram.io/playground/
 
 Enum "account_type" {
@@ -24,20 +24,20 @@ Table "accounts" {
   "updated_at" timestamp
 }
 
-Table "movements" {
+Table "ledger_lines" {
   id SERIAL [pk, increment]
-  tx integer [not null, ref: > transactions.id]
+  journal_entry_id integer [not null, ref: > journal_entries.id]
   account integer [not null, ref: - accounts.id]
   debit integer [not null, default: 0]
   credit integer [not null, default: 0]
   "created_at" timestamp [not null, default: `now()`]
 
   checks {
-    `debit >= 0 AND credit >= 0 AND (debit > 0) != (credit > 0)` [name: 'movements_valid_leg']
+    `debit >= 0 AND credit >= 0 AND (debit > 0) != (credit > 0)` [name: 'ledger_lines_valid_leg']
   }
 }
 
-Table "transactions" {
+Table "journal_entries" {
   "id" SERIAL [pk, increment]
   "created_at" timestamp [not null, default: `now()`]
   "updated_at" timestamp
@@ -47,32 +47,26 @@ Table balances {
   account_id integer [pk, ref: - accounts.id]
   balance integer [not null, default: 0]
   "updated_at" timestamp [not null, default: `now()`]
-  // last transaction which updated the balance..serves idempotency?
-  // we only really need it if balance is not updated atomically with transaction entry.
-  // We can add a check to ensure the transaction has at least on debit or credit affecting this account,
-  // and maybe that the transaction.created_at > last updated_at of the balance.
-  // last_transaction integer [ref: - transactions.id]
+  // last journal entry which updated the balance — only needed if balance updates become async.
+  // last_journal_entry_id integer [ref: - journal_entries.id]
 }
 
 // Temporary table to hold blocked amounts on an account.
-// Record should be removed when the amount is unblocked
+// Record should be removed when the amount is unblocked.
 Table account_blocks {
   id SERIAL [pk, increment]
   account_id integer [not null, ref: - accounts.id]
   amount integer [not null]
   created_at timestamp [not null, default: `now()`]
-  // serves as an idempotency key.. but in that case we shouldn't delete the block record, so
-  // instead we add a check to ensure adding a block for a transfer id is only allowed
-  // if the transfer is pending. We should also make the field UNIQUE?
-  // what if the block is for another reason, should we have a multiple references
-  // with "OneOf" semantics.. or just a single reference to a global event id?
+  // UNIQUE ensures one block per transfer (idempotency).
+  // A trigger enforces account_id matches transfer.from_account_id and transfer is pending.
   transfer_id integer [not null, unique, ref: - transfer_internal.id]
 }
 
 Table transfer_internal {
   id SERIAL [pk, increment]
-  // transaction which was recorded when transfer was successfully completed
-  transaction_id integer [ref: - transactions.id]
+  // journal entry recorded when transfer was successfully completed
+  journal_entry_id integer [ref: - journal_entries.id]
   from_account_id integer [not null, ref: - accounts.id]
   to_account_id integer [not null, ref: - accounts.id]
   amount integer [not null]
