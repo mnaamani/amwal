@@ -73,3 +73,24 @@ Diesel can generate Rust types from the database schema.
 Other services in the system can have totally different stack.
 
 SeaORM for services with more complex data structures spread over multiple tables, apps/services need more complex queries.. other options: https://aarambhdevhub.medium.com/rust-orms-in-2026-diesel-vs-sqlx-vs-seaorm-vs-rusqlite-which-one-should-you-actually-use-706d0fe912f3
+
+## Open questions
+
+SQL datatypes: 
+ - for IDs -> BIGINT probably better idea than simple INT
+ - for Money/Currency store as cents (smallest unit) and BIGINT or
+   use NUMERIC(20,2) ? tradeoffs/convention/best practice?
+ - created_at timestamp, should application provide that to use a global clock or leave it to db with now() ?
+
+Make created_at columns "immutable" using database trigger? example:
+```sql
+  CREATE OR REPLACE FUNCTION immutable_created_at()
+  RETURNS trigger AS $$
+  BEGIN
+    IF NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+      RAISE EXCEPTION 'created_at on % is immutable', TG_TABLE_NAME;
+    END IF;
+    RETURN NEW;
+  END;
+  $$ LANGUAGE plpgsql;
+```
