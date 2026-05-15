@@ -13,6 +13,9 @@ mod schema;
 pub use accounts::{
     activate_account, create_account, delete_account, get_account, get_active_accounts,
 };
+pub use journal_entries::{
+    TrialBalanceReport, get_account_balance, get_account_lines, post_journal_entry, trial_balance,
+};
 
 pub fn db_connect() -> PgConnection {
     dotenv().ok();
