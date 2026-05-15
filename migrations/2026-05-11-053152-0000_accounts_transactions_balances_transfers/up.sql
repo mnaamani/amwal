@@ -1,6 +1,6 @@
 -- SQL dump generated using DBML (dbml.dbdiagram.io)
 -- Database: PostgreSQL
--- Generated at: 2026-05-15T06:35:57.957Z
+-- Generated at: 2026-05-15T13:02:06.117Z
 
 CREATE TYPE "account_type" AS ENUM (
   'asset',
@@ -62,8 +62,8 @@ CREATE TABLE "transfer_internal" (
   "to_account_id" integer NOT NULL,
   "amount" bigint NOT NULL,
   "created_at" timestamp NOT NULL DEFAULT (now()),
-  "completed_at" timestamp,
-  "status" transfer_status NOT NULL
+  "updated_at" timestamp,
+  "status" transfer_status NOT NULL DEFAULT 'pending'
 );
 
 ALTER TABLE "ledger_lines" ADD FOREIGN KEY ("journal_entry_id") REFERENCES "journal_entries" ("id") DEFERRABLE INITIALLY IMMEDIATE;

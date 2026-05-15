@@ -37,9 +37,11 @@ pub enum LedgerError {
         requested: i64,
     },
     AccountNotActive(AccountId),
+    AccountNotFound(AccountId),
     InvalidJournalEntry(String),
     InvalidLedgerLine(String),
     InvalidTransferState(String),
+    GeneralError(String),
 }
 
 impl From<DieselError> for LedgerError {

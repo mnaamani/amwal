@@ -65,12 +65,12 @@ Table account_blocks {
 
 Table transfer_internal {
   id SERIAL [pk, increment]
-  // journal entry recorded when transfer was successfully completed
+  // journal entry recorded when transfer is successfully completed
   journal_entry_id integer [ref: - journal_entries.id]
   from_account_id integer [not null, ref: - accounts.id]
   to_account_id integer [not null, ref: - accounts.id]
   amount bigint [not null]
   created_at timestamp [not null, default: `now()`]
-  completed_at timestamp
-  status transfer_status [not null]
+  updated_at timestamp
+  status transfer_status [not null, default: 'pending']
 }

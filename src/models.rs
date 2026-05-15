@@ -179,6 +179,7 @@ pub struct NewAccountBlock {
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct TransferInternal {
     pub id: TransferInternalId,
+    // Will be set when transfer is completed and posted to the ledger
     pub journal_entry_id: Option<JournalEntryId>,
     pub from_account_id: AccountId,
     pub to_account_id: AccountId,
@@ -194,5 +195,4 @@ pub struct NewTransferInternal {
     pub from_account_id: AccountId,
     pub to_account_id: AccountId,
     pub amount: i64,
-    pub status: TransferStatus,
 }
