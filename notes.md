@@ -76,7 +76,7 @@ SeaORM for services with more complex data structures spread over multiple table
 
 ## Open questions
 
-SQL datatypes: 
+### SQL datatypes: 
  - for IDs -> BIGINT probably better idea than simple INT
  - for Money/Currency store as cents (smallest unit) and BIGINT or
    use NUMERIC(20,2) ? tradeoffs/convention/best practice?
@@ -94,3 +94,5 @@ Make created_at columns "immutable" using database trigger? example:
   END;
   $$ LANGUAGE plpgsql;
 ```
+### Rust types
+  - Rust `SystemTime` used for the timestamp in database records.. is it the best option?
