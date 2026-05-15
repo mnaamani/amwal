@@ -28,8 +28,8 @@ Table "ledger_lines" {
   id SERIAL [pk, increment]
   journal_entry_id integer [not null, ref: > journal_entries.id]
   account integer [not null, ref: - accounts.id]
-  debit integer [not null, default: 0]
-  credit integer [not null, default: 0]
+  debit bigint [not null, default: 0]
+  credit bigint [not null, default: 0]
   "created_at" timestamp [not null, default: `now()`]
 
   checks {
@@ -45,7 +45,7 @@ Table "journal_entries" {
 
 Table balances {
   account_id integer [pk, ref: - accounts.id]
-  balance integer [not null, default: 0]
+  balance bigint [not null, default: 0]
   "updated_at" timestamp [not null, default: `now()`]
   // last journal entry which updated the balance — only needed if balance updates become async.
   // last_journal_entry_id integer [ref: - journal_entries.id]
@@ -56,7 +56,7 @@ Table balances {
 Table account_blocks {
   id SERIAL [pk, increment]
   account_id integer [not null, ref: - accounts.id]
-  amount integer [not null]
+  amount bigint [not null]
   created_at timestamp [not null, default: `now()`]
   // UNIQUE ensures one block per transfer (idempotency).
   // A trigger enforces account_id matches transfer.from_account_id and transfer is pending.
@@ -69,7 +69,7 @@ Table transfer_internal {
   journal_entry_id integer [ref: - journal_entries.id]
   from_account_id integer [not null, ref: - accounts.id]
   to_account_id integer [not null, ref: - accounts.id]
-  amount integer [not null]
+  amount bigint [not null]
   created_at timestamp [not null, default: `now()`]
   completed_at timestamp
   status transfer_status [not null]

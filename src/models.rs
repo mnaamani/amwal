@@ -1,10 +1,10 @@
-use crate::schema::{account_blocks, accounts, balances, journal_lines, transfer_internal};
+use crate::schema::{account_blocks, accounts, balances, ledger_lines, transfer_internal};
 use diesel::prelude::*;
-use std::{str::FromStr, time::SystemTime};
+use std::{num::NonZeroU64, str::FromStr, time::SystemTime};
 
 pub type AccountId = i32;
 pub type JournalEntryId = i32;
-pub type JournalLineId = i32;
+pub type LedgerLineId = i32;
 pub type AccountBlockId = i32;
 pub type TransferInternalId = i32;
 
@@ -75,33 +75,67 @@ pub struct JournalEntry {
     pub updated_at: Option<SystemTime>,
 }
 
+/// A single debit or credit posting to an account within a journal entry.
+pub enum Posting {
+    Debit(NonZeroU64),
+    Credit(NonZeroU64),
+}
+
+impl Posting {
+    pub fn debit(&self) -> i64 {
+        match self {
+            Self::Debit(v) => v.get() as i64,
+            Self::Credit(_) => 0,
+        }
+    }
+    pub fn credit(&self) -> i64 {
+        match self {
+            Self::Credit(v) => v.get() as i64,
+            Self::Debit(_) => 0,
+        }
+    }
+    pub fn amount(&self) -> NonZeroU64 {
+        match self {
+            Self::Debit(v) | Self::Credit(v) => *v,
+        }
+    }
+}
+
 #[derive(Queryable, Selectable, Identifiable)]
-#[diesel(table_name = crate::schema::journal_lines)]
+#[diesel(table_name = crate::schema::ledger_lines)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct JournalLine {
-    pub id: JournalLineId,
+pub struct LedgerLine {
+    pub id: LedgerLineId,
     pub journal_entry_id: JournalEntryId,
     pub account: AccountId,
-    pub debit: i32,
-    pub credit: i32,
+    pub debit: i64,
+    pub credit: i64,
     pub created_at: SystemTime,
 }
 
-#[derive(Insertable)]
-#[diesel(table_name = journal_lines)]
-pub struct NewJournalLine {
-    pub journal_entry_id: JournalEntryId,
-    pub account: AccountId,
-    pub debit: i32,
-    pub credit: i32,
+impl LedgerLine {
+    pub fn posting(&self) -> Posting {
+        if self.debit > 0 {
+            Posting::Debit(NonZeroU64::new(self.debit as u64).expect("debit checked > 0"))
+        } else {
+            Posting::Credit(NonZeroU64::new(self.credit as u64).expect("credit checked > 0"))
+        }
+    }
 }
 
-/// One leg of a journal entry passed as input to post_journal_entry.
-/// Represent a debit leg with credit = 0 and a credit leg with debit = 0.
-pub struct NewJournalLineInput {
+#[derive(Insertable)]
+#[diesel(table_name = ledger_lines)]
+pub struct NewLedgerLine {
+    pub journal_entry_id: JournalEntryId,
+    pub account: AccountId,
+    pub debit: i64,
+    pub credit: i64,
+}
+
+/// Input for one line of a journal entry — the type system enforces exactly one posting per line.
+pub struct NewLedgerLineInput {
     pub account_id: AccountId,
-    pub debit: i32,
-    pub credit: i32,
+    pub posting: Posting,
 }
 
 #[derive(Queryable, Selectable, Identifiable)]
@@ -110,7 +144,7 @@ pub struct NewJournalLineInput {
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Balance {
     pub account_id: AccountId,
-    pub balance: i32,
+    pub balance: i64,
     pub updated_at: SystemTime,
 }
 
@@ -118,7 +152,7 @@ pub struct Balance {
 #[diesel(table_name = balances)]
 pub struct NewBalance {
     pub account_id: AccountId,
-    pub balance: i32,
+    pub balance: i64,
 }
 
 #[derive(Queryable, Selectable, Identifiable)]
@@ -127,7 +161,7 @@ pub struct NewBalance {
 pub struct AccountBlock {
     pub id: AccountBlockId,
     pub account_id: AccountId,
-    pub amount: i32,
+    pub amount: i64,
     pub created_at: SystemTime,
     pub transfer_id: TransferInternalId,
 }
@@ -136,7 +170,7 @@ pub struct AccountBlock {
 #[diesel(table_name = account_blocks)]
 pub struct NewAccountBlock {
     pub account_id: AccountId,
-    pub amount: i32,
+    pub amount: i64,
     pub transfer_id: TransferInternalId,
 }
 
@@ -148,7 +182,7 @@ pub struct TransferInternal {
     pub journal_entry_id: Option<JournalEntryId>,
     pub from_account_id: AccountId,
     pub to_account_id: AccountId,
-    pub amount: i32,
+    pub amount: i64,
     pub created_at: SystemTime,
     pub completed_at: Option<SystemTime>,
     pub status: TransferStatus,
@@ -159,6 +193,6 @@ pub struct TransferInternal {
 pub struct NewTransferInternal {
     pub from_account_id: AccountId,
     pub to_account_id: AccountId,
-    pub amount: i32,
+    pub amount: i64,
     pub status: TransferStatus,
 }

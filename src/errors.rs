@@ -33,11 +33,12 @@ pub enum LedgerError {
         total_credits: i64,
     },
     InsufficientFunds {
-        available: i32,
-        requested: i32,
+        available: i64,
+        requested: i64,
     },
     AccountNotActive(AccountId),
-    InvalidMovement(String),
+    InvalidJournalEntry(String),
+    InvalidLedgerLine(String),
     InvalidTransferState(String),
 }
 

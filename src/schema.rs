@@ -14,7 +14,7 @@ diesel::table! {
     account_blocks (id) {
         id -> Int4,
         account_id -> Int4,
-        amount -> Int4,
+        amount -> Int8,
         created_at -> Timestamp,
         transfer_id -> Int4,
     }
@@ -37,7 +37,7 @@ diesel::table! {
 diesel::table! {
     balances (account_id) {
         account_id -> Int4,
-        balance -> Int4,
+        balance -> Int8,
         updated_at -> Timestamp,
     }
 }
@@ -55,8 +55,8 @@ diesel::table! {
         id -> Int4,
         journal_entry_id -> Int4,
         account -> Int4,
-        debit -> Int4,
-        credit -> Int4,
+        debit -> Int8,
+        credit -> Int8,
         created_at -> Timestamp,
     }
 }
@@ -70,7 +70,7 @@ diesel::table! {
         journal_entry_id -> Nullable<Int4>,
         from_account_id -> Int4,
         to_account_id -> Int4,
-        amount -> Int4,
+        amount -> Int8,
         created_at -> Timestamp,
         completed_at -> Nullable<Timestamp>,
         status -> TransferStatus,
