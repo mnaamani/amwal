@@ -1,9 +1,9 @@
-use ledger::{db_connect, get_active_accounts};
+use ledger::{LedgerStore, PostgresStore};
 
 fn main() {
-    let connection = &mut db_connect();
+    let mut store = PostgresStore::from_env();
 
-    let results = get_active_accounts(connection).unwrap();
+    let results = store.get_active_accounts().unwrap();
 
     println!("Displaying {} accounts", results.len());
     for account in results {

@@ -1,33 +1,8 @@
-use diesel::result::{DatabaseErrorKind, Error as DieselError};
-
-use crate::models::AccountId;
-
-#[derive(Debug)]
-pub enum DbErrorKind {
-    NotFound,
-    CheckViolation,
-    UniqueViolation,
-    Connection,
-    Other(String),
-}
-
-impl From<DieselError> for DbErrorKind {
-    fn from(e: DieselError) -> Self {
-        match e {
-            DieselError::NotFound => DbErrorKind::NotFound,
-            DieselError::DatabaseError(kind, info) => match kind {
-                DatabaseErrorKind::CheckViolation => DbErrorKind::CheckViolation,
-                DatabaseErrorKind::UniqueViolation => DbErrorKind::UniqueViolation,
-                _ => DbErrorKind::Other(info.message().to_string()),
-            },
-            _ => DbErrorKind::Other(e.to_string()),
-        }
-    }
-}
+use crate::domain::AccountId;
 
 #[derive(Debug)]
 pub enum LedgerError {
-    Db(DbErrorKind),
+    Storage(String),
     ImbalancedEntry {
         total_debits: i64,
         total_credits: i64,
@@ -41,11 +16,4 @@ pub enum LedgerError {
     InvalidJournalEntry(String),
     InvalidLedgerLine(String),
     InvalidTransferState(String),
-    GeneralError(String),
-}
-
-impl From<DieselError> for LedgerError {
-    fn from(e: DieselError) -> Self {
-        LedgerError::Db(DbErrorKind::from(e))
-    }
 }
