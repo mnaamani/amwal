@@ -6,7 +6,6 @@ pub mod accounts;
 pub mod errors;
 pub mod journal_entries;
 pub mod models;
-pub mod transfers;
 // Keep schema private, hide the details from the application. They only need to know about the models
 mod schema;
 
