@@ -40,7 +40,10 @@ pub(super) fn set_account_active(
             .map_err(storage_err)?;
 
         diesel::insert_into(balances::table)
-            .values(models::NewBalance { account_id: id, balance: 0 })
+            .values(models::NewBalance {
+                account_id: id,
+                balance: 0,
+            })
             .on_conflict_do_nothing()
             .execute(conn)
             .map_err(storage_err)?;

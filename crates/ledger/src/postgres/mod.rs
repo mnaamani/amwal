@@ -41,7 +41,8 @@ impl PostgresLedgerStore {
 
     pub fn from_env() -> Self {
         dotenv().ok();
-        let database_url = env::var("LEDGER_DATABASE_URL").expect("LEDGER_DATABASE_URL must be set");
+        let database_url =
+            env::var("LEDGER_DATABASE_URL").expect("LEDGER_DATABASE_URL must be set");
         let manager = ConnectionManager::<PgConnection>::new(database_url);
         let pool = Pool::builder()
             .build(manager)
@@ -50,12 +51,19 @@ impl PostgresLedgerStore {
     }
 
     fn conn(&self) -> Result<PgConn, LedgerError> {
-        self.pool.get().map_err(|e| LedgerError::Storage(e.to_string()))
+        self.pool
+            .get()
+            .map_err(|e| LedgerError::Storage(e.to_string()))
     }
 }
 
 impl LedgerStore for PostgresLedgerStore {
-    fn insert_account(&self, client_id: &str, name: &str, account_type: AccountType) -> Result<Account, LedgerError> {
+    fn insert_account(
+        &self,
+        client_id: &str,
+        name: &str,
+        account_type: AccountType,
+    ) -> Result<Account, LedgerError> {
         let mut conn = self.conn()?;
         accounts::insert_account(&mut *conn, client_id, name, account_type)
     }
@@ -105,7 +113,12 @@ impl LedgerStore for PostgresLedgerStore {
         journal_entries::aggregate_balances_by_type(&mut *conn)
     }
 
-    fn create_account_block(&self, client_id: &str, account_id: AccountId, amount: i64) -> Result<AccountBlock, LedgerError> {
+    fn create_account_block(
+        &self,
+        client_id: &str,
+        account_id: AccountId,
+        amount: i64,
+    ) -> Result<AccountBlock, LedgerError> {
         let mut conn = self.conn()?;
         journal_entries::create_account_block(&mut *conn, client_id, account_id, amount)
     }

@@ -23,6 +23,8 @@ fn run(ledger: &dyn LedgerClient, client_id: &str) {
     stdin().read_line(&mut account_type_input).unwrap();
     let account_type: AccountType = account_type_input.trim().parse().unwrap();
 
-    let account = ledger.create_account(client_id, account_name, account_type).unwrap();
+    let account = ledger
+        .create_account(client_id, account_name, account_type)
+        .unwrap();
     println!("Created Account id = {}", account.id);
 }

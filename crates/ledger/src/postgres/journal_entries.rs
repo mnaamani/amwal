@@ -5,7 +5,9 @@ use diesel::prelude::*;
 use super::accounts::storage_err;
 use super::models;
 use super::schema::{account_blocks, accounts, balances, journal_entries, ledger_lines};
-use crate::domain::{AccountBlock, AccountId, AccountType, Balance, JournalEntry, LedgerLine, NewLedgerLineInput};
+use crate::domain::{
+    AccountBlock, AccountId, AccountType, Balance, JournalEntry, LedgerLine, NewLedgerLineInput,
+};
 use crate::errors::LedgerError;
 
 /// Atomically insert a journal entry, its ledger lines, and apply the
@@ -97,7 +99,11 @@ pub(super) fn create_account_block(
     amount: i64,
 ) -> Result<AccountBlock, LedgerError> {
     diesel::insert_into(account_blocks::table)
-        .values(models::NewAccountBlock { client_id, account_id, amount })
+        .values(models::NewAccountBlock {
+            client_id,
+            account_id,
+            amount,
+        })
         .returning(models::AccountBlock::as_returning())
         .get_result(conn)
         .map(Into::into)

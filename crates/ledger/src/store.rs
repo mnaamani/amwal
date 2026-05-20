@@ -11,7 +11,12 @@ use crate::errors::LedgerError;
 /// in-memory, etc.).  `Send + Sync` so implementors can be shared via `Arc`.
 pub trait LedgerStore: Send + Sync {
     // -- Accounts --
-    fn insert_account(&self, client_id: &str, name: &str, account_type: AccountType) -> Result<Account, LedgerError>;
+    fn insert_account(
+        &self,
+        client_id: &str,
+        name: &str,
+        account_type: AccountType,
+    ) -> Result<Account, LedgerError>;
     /// Activate the account and seed a zero-balance row (atomic).
     fn set_account_active(&self, id: AccountId) -> Result<Account, LedgerError>;
     fn find_account(&self, id: AccountId) -> Result<Option<Account>, LedgerError>;
@@ -34,6 +39,11 @@ pub trait LedgerStore: Send + Sync {
     fn aggregate_balances_by_type(&self) -> Result<Vec<(AccountType, i64)>, LedgerError>;
 
     // -- Account blocks --
-    fn create_account_block(&self, client_id: &str, account_id: AccountId, amount: i64) -> Result<AccountBlock, LedgerError>;
+    fn create_account_block(
+        &self,
+        client_id: &str,
+        account_id: AccountId,
+        amount: i64,
+    ) -> Result<AccountBlock, LedgerError>;
     fn release_account_block(&self, client_id: &str) -> Result<AccountBlock, LedgerError>;
 }

@@ -11,5 +11,5 @@ pub enum LedgerError {
     AccountNotFound(AccountId),
     InvalidJournalEntry(String),
     InvalidLedgerLine(String),
-    InvalidInput(String)
+    InvalidInput(String),
 }

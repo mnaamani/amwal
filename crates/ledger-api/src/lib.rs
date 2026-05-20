@@ -56,7 +56,10 @@ pub struct JournalLeg {
 pub enum LedgerClientError {
     AccountNotFound(AccountId),
     AccountNotActive(AccountId),
-    ImbalancedEntry { total_debits: i64, total_credits: i64 },
+    ImbalancedEntry {
+        total_debits: i64,
+        total_credits: i64,
+    },
     InvalidRequest(String),
     Unavailable(String),
 }
@@ -66,16 +69,30 @@ pub enum LedgerClientError {
 /// shared via `Arc`.
 pub trait LedgerClient: Send + Sync {
     // -- Account management --
-    fn create_account(&self, client_id: &str, name: &str, account_type: AccountType) -> Result<AccountSummary, LedgerClientError>;
+    fn create_account(
+        &self,
+        client_id: &str,
+        name: &str,
+        account_type: AccountType,
+    ) -> Result<AccountSummary, LedgerClientError>;
     fn activate_account(&self, id: AccountId) -> Result<AccountSummary, LedgerClientError>;
     fn get_account(&self, id: AccountId) -> Result<Option<AccountSummary>, LedgerClientError>;
     fn list_active_accounts(&self) -> Result<Vec<AccountSummary>, LedgerClientError>;
 
     // -- Journal --
     fn get_account_balance(&self, id: AccountId) -> Result<i64, LedgerClientError>;
-    fn post_journal_entry(&self, client_id: &str, legs: Vec<JournalLeg>) -> Result<JournalEntryId, LedgerClientError>;
+    fn post_journal_entry(
+        &self,
+        client_id: &str,
+        legs: Vec<JournalLeg>,
+    ) -> Result<JournalEntryId, LedgerClientError>;
 
     // -- Funds blocking --
-    fn block_funds(&self, client_id: &str, account_id: AccountId, amount: i64) -> Result<(), LedgerClientError>;
+    fn block_funds(
+        &self,
+        client_id: &str,
+        account_id: AccountId,
+        amount: i64,
+    ) -> Result<(), LedgerClientError>;
     fn release_funds(&self, block_client_id: &str) -> Result<(), LedgerClientError>;
 }

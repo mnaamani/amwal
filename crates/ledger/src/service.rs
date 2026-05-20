@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use ledger_api::{
-    AccountSummary, AccountType as ApiAccountType, JournalLeg, JournalPosting, LedgerClient,
-    LedgerClientError, AccountId as ApiAccountId, JournalEntryId as ApiJournalEntryId,
+    AccountId as ApiAccountId, AccountSummary, AccountType as ApiAccountType,
+    JournalEntryId as ApiJournalEntryId, JournalLeg, JournalPosting, LedgerClient,
+    LedgerClientError,
 };
 
 use crate::domain::{
@@ -28,9 +29,16 @@ impl<S: LedgerStore> LedgerService<S> {
         Self { store }
     }
 
-    pub fn create_account(&self, client_id: &str, name: &str, account_type: AccountType) -> Result<Account, LedgerError> {
+    pub fn create_account(
+        &self,
+        client_id: &str,
+        name: &str,
+        account_type: AccountType,
+    ) -> Result<Account, LedgerError> {
         if name.trim().is_empty() {
-            return Err(LedgerError::InvalidInput("account name cannot be empty".into()));
+            return Err(LedgerError::InvalidInput(
+                "account name cannot be empty".into(),
+            ));
         }
         self.store.insert_account(client_id, name, account_type)
     }
@@ -64,7 +72,10 @@ impl<S: LedgerStore> LedgerService<S> {
         let total_debits: i64 = legs.iter().map(|l| l.posting.debit()).sum();
         let total_credits: i64 = legs.iter().map(|l| l.posting.credit()).sum();
         if total_debits != total_credits {
-            return Err(LedgerError::ImbalancedEntry { total_debits, total_credits });
+            return Err(LedgerError::ImbalancedEntry {
+                total_debits,
+                total_credits,
+            });
         }
 
         // ── Account validation ─────────────────────────────────────────────
@@ -76,7 +87,9 @@ impl<S: LedgerStore> LedgerService<S> {
         };
         let found_accounts = self.store.find_accounts_by_ids(&distinct_ids)?;
         if found_accounts.len() != distinct_ids.len() {
-            return Err(LedgerError::Storage("one or more accounts not found".into()));
+            return Err(LedgerError::Storage(
+                "one or more accounts not found".into(),
+            ));
         }
         for account in &found_accounts {
             if !account.active {
@@ -87,14 +100,18 @@ impl<S: LedgerStore> LedgerService<S> {
         // ── Balance delta computation ──────────────────────────────────────
         // Debit-nature (Asset, Expense): delta = debit − credit
         // Credit-nature (Liability, Equity, Revenue): delta = credit − debit
-        let type_map: HashMap<AccountId, AccountType> =
-            found_accounts.iter().map(|a| (a.id, a.account_type)).collect();
+        let type_map: HashMap<AccountId, AccountType> = found_accounts
+            .iter()
+            .map(|a| (a.id, a.account_type))
+            .collect();
         let mut deltas: HashMap<AccountId, i64> = HashMap::new();
         for leg in &legs {
             let account_type = type_map[&leg.account_id];
             let delta = match (&leg.posting, account_type) {
                 (Posting::Debit(v), AccountType::Asset | AccountType::Expense) => v.get() as i64,
-                (Posting::Credit(v), AccountType::Asset | AccountType::Expense) => -(v.get() as i64),
+                (Posting::Credit(v), AccountType::Asset | AccountType::Expense) => {
+                    -(v.get() as i64)
+                }
                 (Posting::Credit(v), _) => v.get() as i64,
                 (Posting::Debit(v), _) => -(v.get() as i64),
             };
@@ -104,12 +121,21 @@ impl<S: LedgerStore> LedgerService<S> {
         self.store.persist_journal_entry(client_id, &legs, deltas)
     }
 
-    pub fn block_funds(&self, client_id: &str, account_id: AccountId, amount: i64) -> Result<(), LedgerError> {
-        self.store.create_account_block(client_id, account_id, amount).map(|_| ())
+    pub fn block_funds(
+        &self,
+        client_id: &str,
+        account_id: AccountId,
+        amount: i64,
+    ) -> Result<(), LedgerError> {
+        self.store
+            .create_account_block(client_id, account_id, amount)
+            .map(|_| ())
     }
 
     pub fn release_funds(&self, block_client_id: &str) -> Result<(), LedgerError> {
-        self.store.release_account_block(block_client_id).map(|_| ())
+        self.store
+            .release_account_block(block_client_id)
+            .map(|_| ())
     }
 
     pub fn get_account_balance(&self, account_id: AccountId) -> Result<Balance, LedgerError> {
@@ -155,7 +181,12 @@ impl LedgerService<PostgresLedgerStore> {
 // ── External interface ────────────────────────────────────────────────────────
 
 impl<S: LedgerStore> LedgerClient for LedgerService<S> {
-    fn create_account(&self, client_id: &str, name: &str, account_type: ApiAccountType) -> Result<AccountSummary, LedgerClientError> {
+    fn create_account(
+        &self,
+        client_id: &str,
+        name: &str,
+        account_type: ApiAccountType,
+    ) -> Result<AccountSummary, LedgerClientError> {
         LedgerService::create_account(self, client_id, name, account_type)
             .map(account_to_summary)
             .map_err(to_client_err)
@@ -176,7 +207,10 @@ impl<S: LedgerStore> LedgerClient for LedgerService<S> {
 
     fn list_active_accounts(&self) -> Result<Vec<AccountSummary>, LedgerClientError> {
         let ids = self.store.list_active_accounts().map_err(to_client_err)?;
-        let accounts = self.store.find_accounts_by_ids(&ids).map_err(to_client_err)?;
+        let accounts = self
+            .store
+            .find_accounts_by_ids(&ids)
+            .map_err(to_client_err)?;
         Ok(accounts.into_iter().map(account_to_summary).collect())
     }
 
@@ -199,7 +233,12 @@ impl<S: LedgerStore> LedgerClient for LedgerService<S> {
             .map_err(to_client_err)
     }
 
-    fn block_funds(&self, client_id: &str, account_id: ApiAccountId, amount: i64) -> Result<(), LedgerClientError> {
+    fn block_funds(
+        &self,
+        client_id: &str,
+        account_id: ApiAccountId,
+        amount: i64,
+    ) -> Result<(), LedgerClientError> {
         LedgerService::block_funds(self, client_id, account_id, amount).map_err(to_client_err)
     }
 
@@ -211,7 +250,11 @@ impl<S: LedgerStore> LedgerClient for LedgerService<S> {
 // ── Conversion helpers ────────────────────────────────────────────────────────
 
 fn account_to_summary(a: Account) -> AccountSummary {
-    AccountSummary { id: a.id, active: a.active, name: a.name }
+    AccountSummary {
+        id: a.id,
+        active: a.active,
+        name: a.name,
+    }
 }
 
 fn journal_leg_to_input(leg: JournalLeg) -> NewLedgerLineInput {
@@ -228,9 +271,13 @@ fn to_client_err(e: LedgerError) -> LedgerClientError {
     match e {
         LedgerError::AccountNotFound(id) => LedgerClientError::AccountNotFound(id),
         LedgerError::AccountNotActive(id) => LedgerClientError::AccountNotActive(id),
-        LedgerError::ImbalancedEntry { total_debits, total_credits } => {
-            LedgerClientError::ImbalancedEntry { total_debits, total_credits }
-        }
+        LedgerError::ImbalancedEntry {
+            total_debits,
+            total_credits,
+        } => LedgerClientError::ImbalancedEntry {
+            total_debits,
+            total_credits,
+        },
         LedgerError::InvalidJournalEntry(s)
         | LedgerError::InvalidLedgerLine(s)
         | LedgerError::InvalidInput(s) => LedgerClientError::InvalidRequest(s),

@@ -1,7 +1,7 @@
 pub mod domain;
 pub mod errors;
-pub mod store;
 pub mod service;
+pub mod store;
 
 mod postgres;
 
