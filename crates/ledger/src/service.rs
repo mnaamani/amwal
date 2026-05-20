@@ -254,6 +254,7 @@ fn account_to_summary(a: Account) -> AccountSummary {
         id: a.id,
         active: a.active,
         name: a.name,
+        account_type: a.account_type,
     }
 }
 

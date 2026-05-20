@@ -38,6 +38,7 @@ pub struct AccountSummary {
     pub id: AccountId,
     pub active: bool,
     pub name: String,
+    pub account_type: AccountType,
 }
 
 /// One side of a double-entry journal posting.

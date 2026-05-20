@@ -1,6 +1,9 @@
 use std::num::NonZeroU64;
 
-use ledger_api::{AccountId, JournalLeg, JournalPosting, LedgerClient, LedgerClientError};
+use ledger_api::{
+    AccountId, AccountSummary, AccountType, JournalLeg, JournalPosting, LedgerClient,
+    LedgerClientError,
+};
 
 mod postgres;
 
@@ -62,22 +65,13 @@ pub fn initiate_transfer<L: LedgerClient>(
         ));
     }
 
-    // Validate both accounts exist and are active.
-    for account_id in [input.from_account_id, input.to_account_id] {
-        let account = ledger
-            .get_account(account_id)
-            .map_err(TransferError::Ledger)?
-            .ok_or(TransferError::Ledger(LedgerClientError::AccountNotFound(
-                account_id,
-            )))?;
-        if !account.active {
-            return Err(TransferError::Ledger(LedgerClientError::AccountNotActive(
-                account_id,
-            )));
-        }
-    }
+    let from_account = require_active(ledger, input.from_account_id)?;
+    let to_account = require_active(ledger, input.to_account_id)?;
 
-    // Check the sender's posted balance.
+    // Validate both accounts share the same accounting nature up front so we
+    // don't create a transfer that will fail at settlement.
+    check_same_nature(from_account.account_type, to_account.account_type)?;
+
     let balance = ledger
         .get_account_balance(input.from_account_id)
         .map_err(TransferError::Ledger)?;
@@ -104,8 +98,13 @@ pub fn initiate_transfer<L: LedgerClient>(
 
 /// Post the journal entry, release the block, and mark the transfer Completed.
 ///
-/// The journal entry Debits the receiver (increases their balance) and Credits
-/// the sender (decreases their balance) — correct for asset accounts.
+/// Posting direction is determined by account type:
+/// - Debit-normal (Asset, Expense): sender gets Credit, receiver gets Debit.
+/// - Credit-normal (Liability, Equity, Revenue): sender gets Debit, receiver gets Credit.
+///
+/// Example — two customer deposit accounts (Liability):
+///   DR sender   (decreases liability — bank owes sender less)
+///   CR receiver (increases liability — bank owes receiver more)
 pub fn complete_transfer<L: LedgerClient>(
     ledger: &L,
     store: &TransferStore,
@@ -118,35 +117,27 @@ pub fn complete_transfer<L: LedgerClient>(
         )));
     }
 
-    // Both accounts must still be active at settlement time.
-    for account_id in [transfer.from_account_id, transfer.to_account_id] {
-        let account = ledger
-            .get_account(account_id)
-            .map_err(TransferError::Ledger)?
-            .ok_or(TransferError::Ledger(LedgerClientError::AccountNotFound(
-                account_id,
-            )))?;
-        if !account.active {
-            return Err(TransferError::Ledger(LedgerClientError::AccountNotActive(
-                account_id,
-            )));
-        }
-    }
+    // Re-validate both accounts are still active at settlement time and get their types.
+    let from_account = require_active(ledger, transfer.from_account_id)?;
+    let to_account = require_active(ledger, transfer.to_account_id)?;
+    check_same_nature(from_account.account_type, to_account.account_type)?;
 
     let amount = NonZeroU64::new(transfer.amount as u64)
         .ok_or_else(|| TransferError::InvalidState("transfer amount must be positive".into()))?;
+
+    let (from_posting, to_posting) = postings_for(from_account.account_type, amount);
 
     ledger
         .post_journal_entry(
             &transfer.client_id,
             vec![
                 JournalLeg {
-                    account_id: transfer.to_account_id,
-                    posting: JournalPosting::Debit(amount),
+                    account_id: transfer.from_account_id,
+                    posting: from_posting,
                 },
                 JournalLeg {
-                    account_id: transfer.from_account_id,
-                    posting: JournalPosting::Credit(amount),
+                    account_id: transfer.to_account_id,
+                    posting: to_posting,
                 },
             ],
         )
@@ -177,4 +168,61 @@ pub fn cancel_transfer<L: LedgerClient>(
         .map_err(TransferError::Ledger)?;
 
     store.set_transfer_status(transfer_id, TransferStatus::Cancelled)
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+fn require_active<L: LedgerClient>(
+    ledger: &L,
+    account_id: AccountId,
+) -> Result<AccountSummary, TransferError> {
+    let account = ledger
+        .get_account(account_id)
+        .map_err(TransferError::Ledger)?
+        .ok_or(TransferError::Ledger(LedgerClientError::AccountNotFound(
+            account_id,
+        )))?;
+    if !account.active {
+        return Err(TransferError::Ledger(LedgerClientError::AccountNotActive(
+            account_id,
+        )));
+    }
+    Ok(account)
+}
+
+/// Returns true for accounts whose balance increases on a Debit (Asset, Expense).
+fn is_debit_normal(t: AccountType) -> bool {
+    matches!(t, AccountType::Asset | AccountType::Expense)
+}
+
+/// Transfers are only defined between accounts of the same nature. A transfer
+/// between, say, a Liability and an Asset account would require a contra/
+/// intermediate account and is out of scope here.
+fn check_same_nature(from: AccountType, to: AccountType) -> Result<(), TransferError> {
+    if is_debit_normal(from) != is_debit_normal(to) {
+        return Err(TransferError::InvalidState(
+            "cannot transfer between accounts of different natures \
+             (debit-normal vs credit-normal)"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Returns `(from_posting, to_posting)` such that the sender's balance
+/// decreases and the receiver's balance increases.
+fn postings_for(account_type: AccountType, amount: NonZeroU64) -> (JournalPosting, JournalPosting) {
+    if is_debit_normal(account_type) {
+        // Asset/Expense: Credit decreases, Debit increases.
+        (
+            JournalPosting::Credit(amount),
+            JournalPosting::Debit(amount),
+        )
+    } else {
+        // Liability/Equity/Revenue: Debit decreases, Credit increases.
+        (
+            JournalPosting::Debit(amount),
+            JournalPosting::Credit(amount),
+        )
+    }
 }
