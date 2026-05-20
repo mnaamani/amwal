@@ -39,7 +39,11 @@ pub trait LedgerStore: Send + Sync {
     fn aggregate_balances_by_type(&self) -> Result<Vec<(AccountType, i64)>, LedgerError>;
 
     // -- Account blocks --
-    fn create_account_block(
+    /// Sum of all unreleased block amounts for the account.
+    fn sum_unreleased_blocks(&self, account_id: AccountId) -> Result<i64, LedgerError>;
+    /// Atomically check available balance and insert a block. Returns
+    /// `InsufficientFunds` if `posted_balance - unreleased_blocks < amount`.
+    fn block_funds(
         &self,
         client_id: &str,
         account_id: AccountId,

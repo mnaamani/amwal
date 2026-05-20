@@ -72,12 +72,12 @@ pub fn initiate_transfer<L: LedgerClient>(
     // don't create a transfer that will fail at settlement.
     check_same_nature(from_account.account_type, to_account.account_type)?;
 
-    let balance = ledger
-        .get_account_balance(input.from_account_id)
+    let available = ledger
+        .get_available_balance(input.from_account_id)
         .map_err(TransferError::Ledger)?;
-    if balance < input.amount {
+    if available < input.amount {
         return Err(TransferError::InsufficientFunds {
-            available: balance,
+            available,
             requested: input.amount,
         });
     }

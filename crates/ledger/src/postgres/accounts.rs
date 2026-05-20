@@ -2,8 +2,8 @@ use diesel::prelude::*;
 use std::time::SystemTime;
 
 use super::models;
-use super::schema::{accounts::dsl as accts, balances};
-use crate::domain::{Account, AccountId, AccountType};
+use super::schema::{account_blocks, accounts::dsl as accts, balances};
+use crate::domain::{Account, AccountBlock, AccountId, AccountType};
 use crate::errors::LedgerError;
 
 pub(super) fn insert_account(
@@ -84,6 +84,69 @@ pub(super) fn list_active_accounts(conn: &mut PgConnection) -> Result<Vec<Accoun
         .select(models::Account::as_select())
         .load(conn)
         .map(|v| v.into_iter().map(|v| v.id).collect())
+        .map_err(storage_err)
+}
+
+pub(super) fn sum_unreleased_blocks(
+    conn: &mut PgConnection,
+    account_id: AccountId,
+) -> Result<i64, LedgerError> {
+    use diesel::dsl::sql;
+    use diesel::sql_types::BigInt;
+    account_blocks::table
+        .filter(account_blocks::account_id.eq(account_id))
+        .filter(account_blocks::released.eq(false))
+        .select(sql::<BigInt>("COALESCE(SUM(amount), 0)"))
+        .first::<i64>(conn)
+        .map_err(storage_err)
+}
+
+pub(super) fn block_funds(
+    conn: &mut PgConnection,
+    client_id: &str,
+    account_id: AccountId,
+    amount: i64,
+) -> Result<AccountBlock, LedgerError> {
+    conn.transaction(|conn| {
+        let balance: i64 = balances::table
+            .find(account_id)
+            .select(balances::balance)
+            .first(conn)
+            .map_err(storage_err)?;
+        let blocked = sum_unreleased_blocks(conn, account_id)?;
+        let available = balance - blocked;
+        if available < amount {
+            return Err(LedgerError::InsufficientFunds {
+                available,
+                requested: amount,
+            });
+        }
+        diesel::insert_into(account_blocks::table)
+            .values(models::NewAccountBlock {
+                client_id,
+                account_id,
+                amount,
+            })
+            .returning(models::AccountBlock::as_returning())
+            .get_result(conn)
+            .map(Into::into)
+            .map_err(storage_err)
+    })
+}
+
+pub(super) fn release_account_block(
+    conn: &mut PgConnection,
+    client_id: &str,
+) -> Result<AccountBlock, LedgerError> {
+    let now = SystemTime::now();
+    diesel::update(account_blocks::table.filter(account_blocks::client_id.eq(client_id)))
+        .set((
+            account_blocks::released.eq(true),
+            account_blocks::updated_at.eq(now),
+        ))
+        .returning(models::AccountBlock::as_returning())
+        .get_result(conn)
+        .map(Into::into)
         .map_err(storage_err)
 }
 

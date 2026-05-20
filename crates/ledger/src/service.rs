@@ -128,7 +128,7 @@ impl<S: LedgerStore> LedgerService<S> {
         amount: i64,
     ) -> Result<(), LedgerError> {
         self.store
-            .create_account_block(client_id, account_id, amount)
+            .block_funds(client_id, account_id, amount)
             .map(|_| ())
     }
 
@@ -140,6 +140,12 @@ impl<S: LedgerStore> LedgerService<S> {
 
     pub fn get_account_balance(&self, account_id: AccountId) -> Result<Balance, LedgerError> {
         self.store.find_balance(account_id)
+    }
+
+    pub fn get_available_balance(&self, account_id: AccountId) -> Result<i64, LedgerError> {
+        let balance = self.store.find_balance(account_id)?.balance;
+        let blocked = self.store.sum_unreleased_blocks(account_id)?;
+        Ok(balance - blocked)
     }
 
     pub fn get_account_lines(&self, account_id: AccountId) -> Result<Vec<LedgerLine>, LedgerError> {
@@ -221,6 +227,10 @@ impl<S: LedgerStore> LedgerClient for LedgerService<S> {
             .map_err(to_client_err)
     }
 
+    fn get_available_balance(&self, id: ApiAccountId) -> Result<i64, LedgerClientError> {
+        LedgerService::get_available_balance(self, id).map_err(to_client_err)
+    }
+
     fn post_journal_entry(
         &self,
         client_id: &str,
@@ -283,5 +293,12 @@ fn to_client_err(e: LedgerError) -> LedgerClientError {
         | LedgerError::InvalidLedgerLine(s)
         | LedgerError::InvalidInput(s) => LedgerClientError::InvalidRequest(s),
         LedgerError::Storage(s) => LedgerClientError::Unavailable(s),
+        LedgerError::InsufficientFunds {
+            available,
+            requested,
+        } => LedgerClientError::InsufficientFunds {
+            available,
+            requested,
+        },
     }
 }

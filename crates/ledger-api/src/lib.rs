@@ -63,6 +63,10 @@ pub enum LedgerClientError {
     },
     InvalidRequest(String),
     Unavailable(String),
+    InsufficientFunds {
+        available: i64,
+        requested: i64,
+    },
 }
 
 /// The full interface for interacting with the ledger — account management,
@@ -82,6 +86,8 @@ pub trait LedgerClient: Send + Sync {
 
     // -- Journal --
     fn get_account_balance(&self, id: AccountId) -> Result<i64, LedgerClientError>;
+    /// Posted balance minus the sum of all unreleased fund blocks on the account.
+    fn get_available_balance(&self, id: AccountId) -> Result<i64, LedgerClientError>;
     fn post_journal_entry(
         &self,
         client_id: &str,

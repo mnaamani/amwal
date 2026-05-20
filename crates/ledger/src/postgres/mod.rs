@@ -113,18 +113,23 @@ impl LedgerStore for PostgresLedgerStore {
         journal_entries::aggregate_balances_by_type(&mut *conn)
     }
 
-    fn create_account_block(
+    fn sum_unreleased_blocks(&self, account_id: AccountId) -> Result<i64, LedgerError> {
+        let mut conn = self.conn()?;
+        accounts::sum_unreleased_blocks(&mut *conn, account_id)
+    }
+
+    fn block_funds(
         &self,
         client_id: &str,
         account_id: AccountId,
         amount: i64,
     ) -> Result<AccountBlock, LedgerError> {
         let mut conn = self.conn()?;
-        journal_entries::create_account_block(&mut *conn, client_id, account_id, amount)
+        accounts::block_funds(&mut *conn, client_id, account_id, amount)
     }
 
     fn release_account_block(&self, client_id: &str) -> Result<AccountBlock, LedgerError> {
         let mut conn = self.conn()?;
-        journal_entries::release_account_block(&mut *conn, client_id)
+        accounts::release_account_block(&mut *conn, client_id)
     }
 }

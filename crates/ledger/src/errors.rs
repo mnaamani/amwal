@@ -12,4 +12,8 @@ pub enum LedgerError {
     InvalidJournalEntry(String),
     InvalidLedgerLine(String),
     InvalidInput(String),
+    InsufficientFunds {
+        available: i64,
+        requested: i64,
+    },
 }

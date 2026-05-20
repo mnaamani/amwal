@@ -4,9 +4,9 @@ use diesel::prelude::*;
 
 use super::accounts::storage_err;
 use super::models;
-use super::schema::{account_blocks, accounts, balances, journal_entries, ledger_lines};
+use super::schema::{accounts, balances, journal_entries, ledger_lines};
 use crate::domain::{
-    AccountBlock, AccountId, AccountType, Balance, JournalEntry, LedgerLine, NewLedgerLineInput,
+    AccountId, AccountType, Balance, JournalEntry, LedgerLine, NewLedgerLineInput,
 };
 use crate::errors::LedgerError;
 
@@ -90,38 +90,4 @@ pub(super) fn aggregate_balances_by_type(
         .map_err(storage_err)?;
 
     Ok(rows.into_iter().map(|(t, b)| (t.into(), b)).collect())
-}
-
-pub(super) fn create_account_block(
-    conn: &mut PgConnection,
-    client_id: &str,
-    account_id: AccountId,
-    amount: i64,
-) -> Result<AccountBlock, LedgerError> {
-    diesel::insert_into(account_blocks::table)
-        .values(models::NewAccountBlock {
-            client_id,
-            account_id,
-            amount,
-        })
-        .returning(models::AccountBlock::as_returning())
-        .get_result(conn)
-        .map(Into::into)
-        .map_err(storage_err)
-}
-
-pub(super) fn release_account_block(
-    conn: &mut PgConnection,
-    client_id: &str,
-) -> Result<AccountBlock, LedgerError> {
-    let now = std::time::SystemTime::now();
-    diesel::update(account_blocks::table.filter(account_blocks::client_id.eq(client_id)))
-        .set((
-            account_blocks::released.eq(true),
-            account_blocks::updated_at.eq(now),
-        ))
-        .returning(models::AccountBlock::as_returning())
-        .get_result(conn)
-        .map(Into::into)
-        .map_err(storage_err)
 }
