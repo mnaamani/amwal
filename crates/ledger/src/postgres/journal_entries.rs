@@ -13,6 +13,16 @@ use crate::errors::LedgerError;
 /// Atomically insert a journal entry, its ledger lines, and apply the
 /// pre-computed balance deltas. All validation and delta computation happens
 /// in the service layer before this is called.
+///
+/// Idempotent on `client_id`: if a journal entry with the same `client_id`
+/// already exists the existing row is returned and no further writes are made.
+/// Because all writes happen inside a single transaction, the presence of the
+/// journal entry row guarantees the lines and balance deltas were also
+/// committed — so returning early on a duplicate is always safe.
+///
+/// Alternative: `INSERT … ON CONFLICT (client_id) DO NOTHING RETURNING *`
+/// would achieve the same in one round trip if latency becomes a concern,
+/// at the cost of hiding this at the database layer.
 pub(super) fn persist_journal_entry(
     conn: &mut PgConnection,
     client_id: &str,
@@ -20,11 +30,26 @@ pub(super) fn persist_journal_entry(
     balance_deltas: HashMap<AccountId, i64>,
 ) -> Result<JournalEntry, LedgerError> {
     conn.transaction::<JournalEntry, LedgerError, _>(|conn| {
-        let entry: models::JournalEntry = diesel::insert_into(journal_entries::table)
+        let insert_result = diesel::insert_into(journal_entries::table)
             .values(models::NewJournalEntry { client_id })
             .returning(models::JournalEntry::as_returning())
-            .get_result(conn)
-            .map_err(storage_err)?;
+            .get_result(conn);
+
+        let entry: models::JournalEntry = match insert_result {
+            Ok(e) => e,
+            Err(diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::UniqueViolation,
+                _,
+            )) => {
+                return journal_entries::table
+                    .filter(journal_entries::client_id.eq(client_id))
+                    .select(models::JournalEntry::as_select())
+                    .first(conn)
+                    .map(Into::into)
+                    .map_err(storage_err);
+            }
+            Err(e) => return Err(storage_err(e)),
+        };
 
         let new_lines: Vec<models::NewLedgerLine> = legs
             .iter()

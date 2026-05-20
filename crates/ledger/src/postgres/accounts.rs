@@ -134,20 +134,42 @@ pub(super) fn block_funds(
     })
 }
 
+/// If the block is already released the existing row is returned
+/// unchanged. This makes `cancel_transfer` and `complete_transfer` safe to
+/// retry (idempotent)
 pub(super) fn release_account_block(
     conn: &mut PgConnection,
     client_id: &str,
 ) -> Result<AccountBlock, LedgerError> {
     let now = SystemTime::now();
-    diesel::update(account_blocks::table.filter(account_blocks::client_id.eq(client_id)))
-        .set((
-            account_blocks::released.eq(true),
-            account_blocks::updated_at.eq(now),
-        ))
-        .returning(models::AccountBlock::as_returning())
-        .get_result(conn)
-        .map(Into::into)
-        .map_err(storage_err)
+    let result = diesel::update(
+        account_blocks::table
+            .filter(account_blocks::client_id.eq(client_id))
+            .filter(account_blocks::released.eq(false)),
+    )
+    .set((
+        account_blocks::released.eq(true),
+        account_blocks::updated_at.eq(now),
+    ))
+    .returning(models::AccountBlock::as_returning())
+    .get_result(conn);
+
+    match result {
+        Ok(block) => Ok(block.into()),
+        // NotFound means either already released or the client_id doesn't exist.
+        // Fetch the row to distinguish: if it exists (released=true) we return
+        // it as a no-op success; if it's genuinely missing we propagate the error.
+        //
+        // Alternative: a single `ON CONFLICT … DO NOTHING` or a conditional
+        // UPDATE with RETURNING would collapse this into one round trip.
+        Err(diesel::result::Error::NotFound) => account_blocks::table
+            .filter(account_blocks::client_id.eq(client_id))
+            .select(models::AccountBlock::as_select())
+            .first(conn)
+            .map(Into::into)
+            .map_err(storage_err),
+        Err(e) => Err(storage_err(e)),
+    }
 }
 
 pub(super) fn storage_err(e: diesel::result::Error) -> LedgerError {

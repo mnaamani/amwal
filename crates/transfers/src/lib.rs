@@ -89,9 +89,13 @@ pub fn initiate_transfer<L: LedgerClient>(
         input.amount,
     )?;
 
-    ledger
-        .block_funds(&input.client_id, input.from_account_id, input.amount)
-        .map_err(TransferError::Ledger)?;
+    if let Err(e) = ledger.block_funds(&input.client_id, input.from_account_id, input.amount) {
+        // Compensate: mark the transfer Failed so it isn't left as a ghost
+        // Pending record. Best-effort — if this also fails the transfer will
+        // be cleaned up by reconciliation.
+        let _ = store.set_transfer_status(transfer.id, TransferStatus::Failed);
+        return Err(TransferError::Ledger(e));
+    }
 
     Ok(transfer.id)
 }
