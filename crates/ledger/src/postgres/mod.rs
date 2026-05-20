@@ -65,27 +65,27 @@ impl LedgerStore for PostgresLedgerStore {
         account_type: AccountType,
     ) -> Result<Account, LedgerError> {
         let mut conn = self.conn()?;
-        accounts::insert_account(&mut *conn, client_id, name, account_type)
+        accounts::insert_account(&mut conn, client_id, name, account_type)
     }
 
     fn set_account_active(&self, id: AccountId) -> Result<Account, LedgerError> {
         let mut conn = self.conn()?;
-        accounts::set_account_active(&mut *conn, id)
+        accounts::set_account_active(&mut conn, id)
     }
 
     fn find_account(&self, id: AccountId) -> Result<Option<Account>, LedgerError> {
         let mut conn = self.conn()?;
-        accounts::find_account(&mut *conn, id)
+        accounts::find_account(&mut conn, id)
     }
 
     fn find_accounts_by_ids(&self, ids: &[AccountId]) -> Result<Vec<Account>, LedgerError> {
         let mut conn = self.conn()?;
-        accounts::find_accounts_by_ids(&mut *conn, ids)
+        accounts::find_accounts_by_ids(&mut conn, ids)
     }
 
     fn list_active_accounts(&self) -> Result<Vec<AccountId>, LedgerError> {
         let mut conn = self.conn()?;
-        accounts::list_active_accounts(&mut *conn)
+        accounts::list_active_accounts(&mut conn)
     }
 
     fn persist_journal_entry(
@@ -95,27 +95,27 @@ impl LedgerStore for PostgresLedgerStore {
         balance_deltas: HashMap<AccountId, i64>,
     ) -> Result<JournalEntry, LedgerError> {
         let mut conn = self.conn()?;
-        journal_entries::persist_journal_entry(&mut *conn, client_id, legs, balance_deltas)
+        journal_entries::persist_journal_entry(&mut conn, client_id, legs, balance_deltas)
     }
 
     fn find_balance(&self, account_id: AccountId) -> Result<Balance, LedgerError> {
         let mut conn = self.conn()?;
-        journal_entries::find_balance(&mut *conn, account_id)
+        journal_entries::find_balance(&mut conn, account_id)
     }
 
     fn find_ledger_lines(&self, account_id: AccountId) -> Result<Vec<LedgerLine>, LedgerError> {
         let mut conn = self.conn()?;
-        journal_entries::find_ledger_lines(&mut *conn, account_id)
+        journal_entries::find_ledger_lines(&mut conn, account_id)
     }
 
     fn aggregate_balances_by_type(&self) -> Result<Vec<(AccountType, i64)>, LedgerError> {
         let mut conn = self.conn()?;
-        journal_entries::aggregate_balances_by_type(&mut *conn)
+        journal_entries::aggregate_balances_by_type(&mut conn)
     }
 
     fn sum_unreleased_blocks(&self, account_id: AccountId) -> Result<i64, LedgerError> {
         let mut conn = self.conn()?;
-        accounts::sum_unreleased_blocks(&mut *conn, account_id)
+        accounts::sum_unreleased_blocks(&mut conn, account_id)
     }
 
     fn block_funds(
@@ -125,11 +125,11 @@ impl LedgerStore for PostgresLedgerStore {
         amount: i64,
     ) -> Result<AccountBlock, LedgerError> {
         let mut conn = self.conn()?;
-        accounts::block_funds(&mut *conn, client_id, account_id, amount)
+        accounts::block_funds(&mut conn, client_id, account_id, amount)
     }
 
     fn release_account_block(&self, client_id: &str) -> Result<AccountBlock, LedgerError> {
         let mut conn = self.conn()?;
-        accounts::release_account_block(&mut *conn, client_id)
+        accounts::release_account_block(&mut conn, client_id)
     }
 }
