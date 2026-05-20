@@ -1,6 +1,6 @@
-# Core banking platform
+# core banking platform
 
-*Experimental* Rust based banking/finance platform, with a ledger service at the core that does (double-entry) book-keeping.
+*Experimental* rust based banking/finance platform, with a ledger service at the core that does (double-entry) book-keeping.
 
 ## Tech
 - [Rust](https://rust-lang.org) - Memory safety, Performance, Fearless concurrency, Small binary sizes

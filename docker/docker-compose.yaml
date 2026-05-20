@@ -1,0 +1,23 @@
+services:
+  db:
+    image: postgres:18
+    container_name: amwal_db
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${DB_PORT}:${DB_PORT}'
+    volumes:
+      - amwal_db_data:/var/lib/postgresql/
+      - ./postgres-init/:/docker-entrypoint-initdb.d/
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      PGPORT: ${DB_PORT}
+      # Initial database created by postgres when it first starts
+      # We don't depend on it, databases are created by in the docker-entrypoint init script
+      POSTGRES_DB: _
+
+volumes:
+  amwal_db_data:
+    driver: local
