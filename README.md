@@ -19,10 +19,12 @@ docker compose -f docker/docker-compose.yaml up -d
 timeout 5
 
 pushd crates/ledger
+diesel setup # incase database was not created
 diesel migration run
 popd
 
 pushd crates/transfers
+diesel setup # incase database was not created
 diesel migration run
 popd
 ```
