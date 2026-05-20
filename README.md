@@ -11,3 +11,18 @@
 !! Intended for learning and educational purpouses only !!
 
 
+## Setup
+```sh
+docker compose -f docker/docker-compose.yaml up -d
+
+# Wait for db to be ready
+timeout 5
+
+pushd crates/ledger
+diesel migration run
+popd
+
+pushd crates/transfers
+diesel migration run
+popd
+```
