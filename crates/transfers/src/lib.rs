@@ -41,28 +41,24 @@ pub enum TransferError {
     Storage(String),
     InsufficientFunds { available: i64, requested: i64 },
     TransferNotFound(TransferInternalId),
-    InvalidState(String),
+    TransferIsNotPending(TransferInternalId),
+    InvalidTransferAmount(i64),
+    InvalidToAccount(AccountId),
+    InvalidInput(String),
+    AccountsMustBeSameNature,
 }
 
 /// Create a pending transfer and block funds on the sender's account.
-///
-/// The balance check uses the ledger's posted balance and does not account for
-/// other in-flight blocks — callers should be aware of this race window until
-/// a dedicated `get_available_balance` is added to `LedgerClient`.
 pub fn initiate_transfer<L: LedgerClient>(
     ledger: &L,
     store: &TransferStore,
     input: &NewTransferInput,
 ) -> Result<TransferInternalId, TransferError> {
     if input.amount <= 0 {
-        return Err(TransferError::InvalidState(
-            "amount must be positive".into(),
-        ));
+        return Err(TransferError::InvalidTransferAmount(input.amount));
     }
     if input.from_account_id == input.to_account_id {
-        return Err(TransferError::InvalidState(
-            "from and to accounts must differ".into(),
-        ));
+        return Err(TransferError::InvalidToAccount(input.to_account_id));
     }
 
     let from_account = require_active(ledger, input.from_account_id)?;
@@ -116,9 +112,7 @@ pub fn complete_transfer<L: LedgerClient>(
 ) -> Result<(), TransferError> {
     let transfer = store.find_transfer(transfer_id)?;
     if transfer.status != TransferStatus::Pending {
-        return Err(TransferError::InvalidState(format!(
-            "transfer {transfer_id} is not pending"
-        )));
+        return Err(TransferError::TransferIsNotPending(transfer.id));
     }
 
     // Re-validate both accounts are still active at settlement time and get their types.
@@ -126,8 +120,9 @@ pub fn complete_transfer<L: LedgerClient>(
     let to_account = require_active(ledger, transfer.to_account_id)?;
     check_same_nature(from_account.account_type, to_account.account_type)?;
 
+    // This is an invariant check really, amount should have been validated when it was initiated
     let amount = NonZeroU64::new(transfer.amount as u64)
-        .ok_or_else(|| TransferError::InvalidState("transfer amount must be positive".into()))?;
+        .ok_or_else(|| TransferError::InvalidTransferAmount(transfer.amount))?;
 
     let (from_posting, to_posting) = postings_for(from_account.account_type, amount);
 
@@ -162,9 +157,7 @@ pub fn cancel_transfer<L: LedgerClient>(
 ) -> Result<(), TransferError> {
     let transfer = store.find_transfer(transfer_id)?;
     if transfer.status != TransferStatus::Pending {
-        return Err(TransferError::InvalidState(format!(
-            "transfer {transfer_id} is not pending"
-        )));
+        return Err(TransferError::TransferIsNotPending(transfer.id));
     }
 
     ledger
@@ -204,11 +197,7 @@ fn is_debit_normal(t: AccountType) -> bool {
 /// intermediate account and is out of scope here.
 fn check_same_nature(from: AccountType, to: AccountType) -> Result<(), TransferError> {
     if is_debit_normal(from) != is_debit_normal(to) {
-        return Err(TransferError::InvalidState(
-            "cannot transfer between accounts of different natures \
-             (debit-normal vs credit-normal)"
-                .into(),
-        ));
+        return Err(TransferError::AccountsMustBeSameNature);
     }
     Ok(())
 }
