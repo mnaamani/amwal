@@ -100,23 +100,26 @@ pub(super) fn sum_unreleased_blocks(
         .map_err(storage_err)
 }
 
-/// Add a new account block for amount if balance allows.
-/// Safe to call more than once with same client_id, no-op if block exists.
+/// Atomically check available balance and insert a block.
+///
+/// Idempotent on `client_id`: if a block with the same `client_id` already
+/// exists the existing row is returned without re-checking the balance. This
+/// makes `initiate_transfer` safe to retry — a second call returns the
+/// already-placed block rather than failing or double-blocking.
+///
+/// The idempotency check happens inside the transaction so that two concurrent
+/// retries cannot both pass the check and race to insert — the losing INSERT
+/// gets a UniqueViolation which is caught and resolved with a follow-up fetch.
+///
+/// Alternative: `INSERT … ON CONFLICT (client_id) DO NOTHING RETURNING *`
+/// would collapse the retry path into one round trip at the cost of
+/// Postgres-specific SQL.
 pub(super) fn apply_account_block(
     conn: &mut PgConnection,
     client_id: &str,
     account_id: AccountId,
     amount: i64,
 ) -> Result<AccountBlock, LedgerError> {
-    // Look for existing block with clinet_id, return if found
-    if let Ok(block) = account_blocks::table
-        .filter(account_blocks::client_id.eq(client_id))
-        .select(models::AccountBlock::as_select())
-        .first(conn)
-    {
-        return Ok(block.into());
-    }
-
     conn.transaction(|conn| {
         let balance: i64 = balances::table
             .find(account_id)
@@ -131,16 +134,28 @@ pub(super) fn apply_account_block(
                 requested: amount,
             });
         }
-        diesel::insert_into(account_blocks::table)
+        let insert_result = diesel::insert_into(account_blocks::table)
             .values(models::NewAccountBlock {
                 client_id,
                 account_id,
                 amount,
             })
             .returning(models::AccountBlock::as_returning())
-            .get_result(conn)
-            .map(Into::into)
-            .map_err(storage_err)
+            .get_result(conn);
+
+        match insert_result {
+            Ok(block) => Ok(block.into()),
+            Err(diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::UniqueViolation,
+                _,
+            )) => account_blocks::table
+                .filter(account_blocks::client_id.eq(client_id))
+                .select(models::AccountBlock::as_select())
+                .first(conn)
+                .map(Into::into)
+                .map_err(storage_err),
+            Err(e) => Err(storage_err(e)),
+        }
     })
 }
 
