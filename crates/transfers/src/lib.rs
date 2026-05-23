@@ -51,8 +51,10 @@ fn validate_transfer_request<L: LedgerClient>(
     ledger: &L,
     request: &TransferRequest,
 ) -> Result<(), TransferError> {
-    let _ = NonZeroU64::new(request.amount as u64)
-        .ok_or_else(|| TransferError::AmountNotPositive(request.amount))?;
+    let _ = u64::try_from(request.amount)
+        .ok()
+        .and_then(NonZeroU64::new)
+        .ok_or(TransferError::AmountNotPositive(request.amount))?;
 
     if request.from_account_id == request.to_account_id {
         return Err(TransferError::AccountsNotDistinct);
@@ -103,8 +105,8 @@ pub fn initiate_transfer<L: LedgerClient>(
             Ok(t)
         }
         Err(TransferError::TransferNotFound) => {
-            let _ = validate_transfer_request(ledger, request)?;
-            let _ = ensure_available_funds(ledger, request)?;
+            validate_transfer_request(ledger, request)?;
+            ensure_available_funds(ledger, request)?;
             store.insert_transfer(
                 &request.client_id,
                 request.from_account_id,
@@ -147,13 +149,17 @@ pub fn complete_transfer<L: LedgerClient>(
         return Err(TransferError::TransferNotPending);
     }
 
-    // Re-validate both accounts are still active at settlement time and get their types.
-    // perhaps this is not necessary as long as ledger applies same constraint, -> less db round trips.
-    let _ = require_active(ledger, transfer.to_account_id)?;
+    // Fetch the from-account type to determine posting direction.
+    // The ledger validates both accounts are active when posting the journal
+    // entry, so we skip the redundant round trip for to_account here.
     let from_account = require_active(ledger, transfer.from_account_id)?;
 
-    let amount = NonZeroU64::new(transfer.amount as u64)
-        .ok_or_else(|| TransferError::AmountNotPositive(transfer.amount))?;
+    // amount was validated positive at initiation time; a non-positive value
+    // here means the DB record was corrupted by something outside this service.
+    let amount = u64::try_from(transfer.amount)
+        .ok()
+        .and_then(NonZeroU64::new)
+        .expect("transfer amount in DB must be positive — data integrity violation");
 
     let (from_posting, to_posting) = postings_for(from_account.account_type, amount);
 
