@@ -80,7 +80,6 @@ pub(super) fn find_accounts_by_ids(
 pub(super) fn list_active_accounts(conn: &mut PgConnection) -> Result<Vec<AccountId>, LedgerError> {
     accts::accounts
         .filter(accts::active.eq(true))
-        .limit(5)
         .select(models::Account::as_select())
         .load(conn)
         .map(|v| v.into_iter().map(|v| v.id).collect())
@@ -101,12 +100,23 @@ pub(super) fn sum_unreleased_blocks(
         .map_err(storage_err)
 }
 
-pub(super) fn block_funds(
+/// Add a new account block for amount if balance allows.
+/// Safe to call more than once with same client_id, no-op if block exists.
+pub(super) fn apply_account_block(
     conn: &mut PgConnection,
     client_id: &str,
     account_id: AccountId,
     amount: i64,
 ) -> Result<AccountBlock, LedgerError> {
+    // Look for existing block with clinet_id, return if found
+    if let Ok(block) = account_blocks::table
+        .filter(account_blocks::client_id.eq(client_id))
+        .select(models::AccountBlock::as_select())
+        .first(conn)
+    {
+        return Ok(block.into());
+    }
+
     conn.transaction(|conn| {
         let balance: i64 = balances::table
             .find(account_id)
@@ -134,9 +144,7 @@ pub(super) fn block_funds(
     })
 }
 
-/// If the block is already released the existing row is returned
-/// unchanged. This makes `cancel_transfer` and `complete_transfer` safe to
-/// retry (idempotent)
+/// If the block is already released the existing row is returned unchanged.
 pub(super) fn release_account_block(
     conn: &mut PgConnection,
     client_id: &str,

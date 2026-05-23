@@ -58,15 +58,19 @@ impl TransferStore {
             .map_err(|e| crate::TransferError::Storage(e.to_string()))
     }
 
-    pub(crate) fn find_transfer(&self, id: i32) -> Result<crate::Transfer, crate::TransferError> {
+    pub(crate) fn find_transfer_by_client_id(
+        &self,
+        client_id: &str,
+    ) -> Result<crate::Transfer, crate::TransferError> {
+        use schema::transfer_internal::client_id as sql_client_id;
         let mut conn = self.conn()?;
         dsl::transfer_internal
-            .find(id)
+            .filter(sql_client_id.eq(client_id))
             .select(models::TransferInternal::as_select())
             .first(&mut *conn)
             .map(Into::into)
             .map_err(|e| match e {
-                diesel::result::Error::NotFound => crate::TransferError::TransferNotFound(id),
+                diesel::result::Error::NotFound => crate::TransferError::TransferNotFound,
                 e => crate::TransferError::Storage(e.to_string()),
             })
     }

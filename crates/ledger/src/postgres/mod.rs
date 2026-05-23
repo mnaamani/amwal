@@ -118,14 +118,14 @@ impl LedgerStore for PostgresLedgerStore {
         accounts::sum_unreleased_blocks(&mut conn, account_id)
     }
 
-    fn block_funds(
+    fn apply_account_block(
         &self,
         client_id: &str,
         account_id: AccountId,
         amount: i64,
     ) -> Result<AccountBlock, LedgerError> {
         let mut conn = self.conn()?;
-        accounts::block_funds(&mut conn, client_id, account_id, amount)
+        accounts::apply_account_block(&mut conn, client_id, account_id, amount)
     }
 
     fn release_account_block(&self, client_id: &str) -> Result<AccountBlock, LedgerError> {

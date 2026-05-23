@@ -128,7 +128,7 @@ impl<S: LedgerStore> LedgerService<S> {
         amount: i64,
     ) -> Result<(), LedgerError> {
         self.store
-            .block_funds(client_id, account_id, amount)
+            .apply_account_block(client_id, account_id, amount)
             .map(|_| ())
     }
 

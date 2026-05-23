@@ -43,7 +43,7 @@ pub trait LedgerStore: Send + Sync {
     fn sum_unreleased_blocks(&self, account_id: AccountId) -> Result<i64, LedgerError>;
     /// Atomically check available balance and insert a block. Returns
     /// `InsufficientFunds` if `posted_balance - unreleased_blocks < amount`.
-    fn block_funds(
+    fn apply_account_block(
         &self,
         client_id: &str,
         account_id: AccountId,

@@ -28,7 +28,7 @@ pub struct Transfer {
     pub status: TransferStatus,
 }
 
-pub struct NewTransferInput {
+pub struct TransferRequest {
     pub client_id: String,
     pub from_account_id: AccountId,
     pub to_account_id: AccountId,
@@ -40,60 +40,92 @@ pub enum TransferError {
     Ledger(LedgerClientError),
     Storage(String),
     InsufficientFunds { available: i64, requested: i64 },
-    TransferNotFound(TransferInternalId),
-    TransferIsNotPending(TransferInternalId),
-    InvalidTransferAmount(i64),
-    InvalidToAccount(AccountId),
-    InvalidInput(String),
-    AccountsMustBeSameNature,
+    TransferNotFound,
+    TransferNotPending,
+    AmountNotPositive(i64),
+    AccountsNotDistinct,
+    AccountsNotSameNature,
+}
+
+fn validate_transfer_request<L: LedgerClient>(
+    ledger: &L,
+    request: &TransferRequest,
+) -> Result<(), TransferError> {
+    let _ = NonZeroU64::new(request.amount as u64)
+        .ok_or_else(|| TransferError::AmountNotPositive(request.amount))?;
+
+    if request.from_account_id == request.to_account_id {
+        return Err(TransferError::AccountsNotDistinct);
+    }
+
+    let from_account = require_active(ledger, request.from_account_id)?;
+    let to_account = require_active(ledger, request.to_account_id)?;
+
+    // Validate both accounts share the same accounting nature upfront so we
+    // don't create a transfer that will fail at settlement.
+    check_same_nature(from_account.account_type, to_account.account_type)?;
+
+    // Other validation checks..(limits, account restrictions, fraud,
+    // security checks (recently added beneficiery, recently changed account password)
+    // compliance, unusual activity detection..
+    Ok(())
+}
+
+fn ensure_available_funds<L: LedgerClient>(
+    ledger: &L,
+    request: &TransferRequest,
+) -> Result<(), TransferError> {
+    // If we are retrying the initiate transfer we may have already blocked funds and perhaps available balance
+    // no longer sufficient. So we must check if there are funds blocked related to the client_id
+    let available = ledger
+        .get_available_balance(request.from_account_id)
+        .map_err(TransferError::Ledger)?;
+    if available < request.amount {
+        return Err(TransferError::InsufficientFunds {
+            available,
+            requested: request.amount,
+        });
+    }
+    Ok(())
 }
 
 /// Create a pending transfer and block funds on the sender's account.
 pub fn initiate_transfer<L: LedgerClient>(
     ledger: &L,
     store: &TransferStore,
-    input: &NewTransferInput,
-) -> Result<TransferInternalId, TransferError> {
-    if input.amount <= 0 {
-        return Err(TransferError::InvalidTransferAmount(input.amount));
-    }
-    if input.from_account_id == input.to_account_id {
-        return Err(TransferError::InvalidToAccount(input.to_account_id));
-    }
+    request: &TransferRequest,
+) -> Result<Transfer, TransferError> {
+    let transfer = match store.find_transfer_by_client_id(&request.client_id) {
+        Ok(t) => {
+            if TransferStatus::Pending != t.status {
+                return Err(TransferError::TransferNotPending);
+            }
+            Ok(t)
+        }
+        Err(TransferError::TransferNotFound) => {
+            let _ = validate_transfer_request(ledger, request)?;
+            let _ = ensure_available_funds(ledger, request)?;
+            store.insert_transfer(
+                &request.client_id,
+                request.from_account_id,
+                request.to_account_id,
+                request.amount,
+            )
+        }
+        e => return e,
+    }?;
 
-    let from_account = require_active(ledger, input.from_account_id)?;
-    let to_account = require_active(ledger, input.to_account_id)?;
-
-    // Validate both accounts share the same accounting nature up front so we
-    // don't create a transfer that will fail at settlement.
-    check_same_nature(from_account.account_type, to_account.account_type)?;
-
-    let available = ledger
-        .get_available_balance(input.from_account_id)
-        .map_err(TransferError::Ledger)?;
-    if available < input.amount {
-        return Err(TransferError::InsufficientFunds {
-            available,
-            requested: input.amount,
-        });
-    }
-
-    let transfer = store.insert_transfer(
-        &input.client_id,
-        input.from_account_id,
-        input.to_account_id,
-        input.amount,
-    )?;
-
-    if let Err(e) = ledger.block_funds(&input.client_id, input.from_account_id, input.amount) {
-        // Compensate: mark the transfer Failed so it isn't left as a ghost
-        // Pending record. Best-effort — if this also fails the transfer will
-        // be cleaned up by reconciliation.
+    if let Err(e) = ledger.block_funds(
+        &transfer.client_id,
+        transfer.from_account_id,
+        transfer.amount,
+    ) {
+        // Set the status failed if we are unable to block funds
         let _ = store.set_transfer_status(transfer.id, TransferStatus::Failed);
         return Err(TransferError::Ledger(e));
     }
 
-    Ok(transfer.id)
+    Ok(transfer)
 }
 
 /// Post the journal entry, release the block, and mark the transfer Completed.
@@ -108,21 +140,20 @@ pub fn initiate_transfer<L: LedgerClient>(
 pub fn complete_transfer<L: LedgerClient>(
     ledger: &L,
     store: &TransferStore,
-    transfer_id: TransferInternalId,
+    client_id: String,
 ) -> Result<(), TransferError> {
-    let transfer = store.find_transfer(transfer_id)?;
-    if transfer.status != TransferStatus::Pending {
-        return Err(TransferError::TransferIsNotPending(transfer.id));
+    let transfer = store.find_transfer_by_client_id(&client_id)?;
+    if TransferStatus::Pending != transfer.status {
+        return Err(TransferError::TransferNotPending);
     }
 
     // Re-validate both accounts are still active at settlement time and get their types.
+    // perhaps this is not necessary as long as ledger applies same constraint, -> less db round trips.
+    let _ = require_active(ledger, transfer.to_account_id)?;
     let from_account = require_active(ledger, transfer.from_account_id)?;
-    let to_account = require_active(ledger, transfer.to_account_id)?;
-    check_same_nature(from_account.account_type, to_account.account_type)?;
 
-    // This is an invariant check really, amount should have been validated when it was initiated
     let amount = NonZeroU64::new(transfer.amount as u64)
-        .ok_or_else(|| TransferError::InvalidTransferAmount(transfer.amount))?;
+        .ok_or_else(|| TransferError::AmountNotPositive(transfer.amount))?;
 
     let (from_posting, to_posting) = postings_for(from_account.account_type, amount);
 
@@ -146,25 +177,28 @@ pub fn complete_transfer<L: LedgerClient>(
         .release_funds(&transfer.client_id)
         .map_err(TransferError::Ledger)?;
 
-    store.set_transfer_status(transfer_id, TransferStatus::Completed)
+    store.set_transfer_status(transfer.id, TransferStatus::Completed)
 }
 
 /// Release the funds block and mark the transfer Cancelled.
+/// Safe to call more than once.
 pub fn cancel_transfer<L: LedgerClient>(
     ledger: &L,
     store: &TransferStore,
-    transfer_id: TransferInternalId,
+    client_id: String,
 ) -> Result<(), TransferError> {
-    let transfer = store.find_transfer(transfer_id)?;
-    if transfer.status != TransferStatus::Pending {
-        return Err(TransferError::TransferIsNotPending(transfer.id));
+    let transfer = store.find_transfer_by_client_id(&client_id)?;
+    if TransferStatus::Pending != transfer.status {
+        return Err(TransferError::TransferNotPending);
     }
 
     ledger
         .release_funds(&transfer.client_id)
         .map_err(TransferError::Ledger)?;
 
-    store.set_transfer_status(transfer_id, TransferStatus::Cancelled)
+    store.set_transfer_status(transfer.id, TransferStatus::Cancelled)?;
+
+    Ok(())
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -197,7 +231,7 @@ fn is_debit_normal(t: AccountType) -> bool {
 /// intermediate account and is out of scope here.
 fn check_same_nature(from: AccountType, to: AccountType) -> Result<(), TransferError> {
     if is_debit_normal(from) != is_debit_normal(to) {
-        return Err(TransferError::AccountsMustBeSameNature);
+        return Err(TransferError::AccountsNotSameNature);
     }
     Ok(())
 }
