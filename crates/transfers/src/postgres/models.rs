@@ -6,7 +6,9 @@ use std::time::SystemTime;
 #[ExistingTypePath = "crate::postgres::schema::sql_types::TransferStatus"]
 pub(super) enum TransferStatus {
     Pending,
+    Cancelling,
     Cancelled,
+    Completing,
     Completed,
     Failed,
 }
@@ -15,7 +17,9 @@ impl From<TransferStatus> for crate::TransferStatus {
     fn from(s: TransferStatus) -> Self {
         match s {
             TransferStatus::Pending => crate::TransferStatus::Pending,
+            TransferStatus::Cancelling => crate::TransferStatus::Cancelling,
             TransferStatus::Cancelled => crate::TransferStatus::Cancelled,
+            TransferStatus::Completing => crate::TransferStatus::Completing,
             TransferStatus::Completed => crate::TransferStatus::Completed,
             TransferStatus::Failed => crate::TransferStatus::Failed,
         }
@@ -26,7 +30,9 @@ impl From<crate::TransferStatus> for TransferStatus {
     fn from(s: crate::TransferStatus) -> Self {
         match s {
             crate::TransferStatus::Pending => TransferStatus::Pending,
+            crate::TransferStatus::Cancelling => TransferStatus::Cancelling,
             crate::TransferStatus::Cancelled => TransferStatus::Cancelled,
+            crate::TransferStatus::Completing => TransferStatus::Completing,
             crate::TransferStatus::Completed => TransferStatus::Completed,
             crate::TransferStatus::Failed => TransferStatus::Failed,
         }

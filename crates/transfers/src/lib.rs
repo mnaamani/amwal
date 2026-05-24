@@ -14,7 +14,11 @@ pub type TransferInternalId = i32;
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TransferStatus {
     Pending,
+    /// Intent to cancel has been recorded; release_funds is in progress.
+    Cancelling,
     Cancelled,
+    /// Intent to complete has been recorded; journal posting is in progress.
+    Completing,
     Completed,
     Failed,
 }
@@ -39,9 +43,16 @@ pub struct TransferRequest {
 pub enum TransferError {
     Ledger(LedgerClientError),
     Storage(String),
-    InsufficientFunds { available: i64, requested: i64 },
+    InsufficientFunds {
+        available: i64,
+        requested: i64,
+    },
     TransferNotFound,
     TransferNotPending,
+    /// complete_transfer was called on a transfer already being cancelled.
+    TransferBeingCancelled,
+    /// cancel_transfer was called on a transfer already being completed.
+    TransferBeingCompleted,
     AmountNotPositive(i64),
     AccountsNotDistinct,
     AccountsNotSameNature,
@@ -139,19 +150,24 @@ pub fn initiate_transfer<L: LedgerClient>(
 /// Example — two customer deposit accounts (Liability):
 ///   DR sender   (decreases liability — bank owes sender less)
 ///   CR receiver (increases liability — bank owes receiver more)
+///
+/// Intent is captured atomically before any ledger write: the transfer is moved
+/// to `Completing` first, so a concurrent `cancel_transfer` sees a conflict and
+/// returns `TransferBeingCompleted` rather than racing ahead.
 pub fn complete_transfer<L: LedgerClient>(
     ledger: &L,
     store: &TransferStore,
     client_id: String,
 ) -> Result<(), TransferError> {
     let transfer = store.find_transfer_by_client_id(&client_id)?;
-    if TransferStatus::Pending != transfer.status {
-        return Err(TransferError::TransferNotPending);
+
+    // Claim the intent atomically. Returns the effective status after the attempt.
+    match store.claim_pending(transfer.id, TransferStatus::Completing)? {
+        TransferStatus::Completing => {} // claimed now, or retry from a prior attempt
+        TransferStatus::Cancelling => return Err(TransferError::TransferBeingCancelled),
+        _ => return Err(TransferError::TransferNotPending),
     }
 
-    // Fetch the from-account type to determine posting direction.
-    // The ledger validates both accounts are active when posting the journal
-    // entry, so we skip the redundant round trip for to_account here.
     let from_account = require_active(ledger, transfer.from_account_id)?;
 
     // amount was validated positive at initiation time; a non-positive value
@@ -187,24 +203,28 @@ pub fn complete_transfer<L: LedgerClient>(
 }
 
 /// Release the funds block and mark the transfer Cancelled.
-/// Safe to call more than once.
+///
+/// Intent is captured atomically before the ledger write: the transfer is moved
+/// to `Cancelling` first, so a concurrent `complete_transfer` sees a conflict
+/// and returns `TransferBeingCompleted` rather than racing ahead. Safe to retry.
 pub fn cancel_transfer<L: LedgerClient>(
     ledger: &L,
     store: &TransferStore,
     client_id: String,
 ) -> Result<(), TransferError> {
     let transfer = store.find_transfer_by_client_id(&client_id)?;
-    if TransferStatus::Pending != transfer.status {
-        return Err(TransferError::TransferNotPending);
+
+    match store.claim_pending(transfer.id, TransferStatus::Cancelling)? {
+        TransferStatus::Cancelling => {} // claimed now, or retry from a prior attempt
+        TransferStatus::Completing => return Err(TransferError::TransferBeingCompleted),
+        _ => return Err(TransferError::TransferNotPending),
     }
 
     ledger
         .release_funds(&transfer.client_id)
         .map_err(TransferError::Ledger)?;
 
-    store.set_transfer_status(transfer.id, TransferStatus::Cancelled)?;
-
-    Ok(())
+    store.set_transfer_status(transfer.id, TransferStatus::Cancelled)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -1,0 +1,2 @@
+-- Postgres does not support removing enum values.
+-- To roll back: drop and recreate the type and dependent table from scratch.

@@ -75,6 +75,47 @@ impl TransferStore {
             })
     }
 
+    /// Atomically transition the transfer from `Pending` to `new_status`,
+    /// returning the effective status after the attempt.
+    ///
+    /// - If the transfer was `Pending`, it is now `new_status` → returns `new_status`.
+    /// - If it was already `new_status` (retry), returns `new_status` unchanged.
+    /// - Any other current status is returned as-is; the caller decides the error.
+    pub(crate) fn claim_pending(
+        &self,
+        id: i32,
+        new_status: crate::TransferStatus,
+    ) -> Result<crate::TransferStatus, crate::TransferError> {
+        let mut conn = self.conn()?;
+        let rows = diesel::update(
+            dsl::transfer_internal
+                .find(id)
+                .filter(dsl::status.eq(models::TransferStatus::Pending)),
+        )
+        .set((
+            dsl::status.eq(models::TransferStatus::from(new_status)),
+            dsl::updated_at.eq(std::time::SystemTime::now()),
+        ))
+        .execute(&mut *conn)
+        .map_err(|e| crate::TransferError::Storage(e.to_string()))?;
+
+        if rows == 1 {
+            return Ok(new_status);
+        }
+
+        // Row was not Pending — fetch the current status so the caller can
+        // distinguish "already in the target state (retry)" from "conflict".
+        dsl::transfer_internal
+            .find(id)
+            .select(dsl::status)
+            .first::<models::TransferStatus>(&mut *conn)
+            .map(Into::into)
+            .map_err(|e| match e {
+                diesel::result::Error::NotFound => crate::TransferError::TransferNotFound,
+                e => crate::TransferError::Storage(e.to_string()),
+            })
+    }
+
     pub(crate) fn set_transfer_status(
         &self,
         id: i32,
