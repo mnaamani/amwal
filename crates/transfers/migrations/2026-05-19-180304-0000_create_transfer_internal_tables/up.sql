@@ -4,7 +4,9 @@
 
 CREATE TYPE "transfer_status" AS ENUM (
   'pending',
+  'cancelling',
   'cancelled',
+  'completing',
   'completed',
   'failed'
 );
