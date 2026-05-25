@@ -67,6 +67,22 @@ pub enum LedgerClientError {
         available: i64,
         requested: i64,
     },
+    /// The two accounts have different accounting natures (one debit-normal,
+    /// one credit-normal) and cannot participate in a direct transfer.
+    AccountsIncompatible,
+}
+
+/// Returns true if two account types can participate in a direct transfer.
+///
+/// Transfers are only defined between accounts of the same accounting nature.
+/// Moving money between a debit-normal account (Asset, Expense) and a
+/// credit-normal account (Liability, Equity, Revenue) would require a
+/// contra/intermediate account and is out of scope here.
+pub fn accounts_compatible(a: AccountType, b: AccountType) -> bool {
+    fn is_debit_normal(t: AccountType) -> bool {
+        matches!(t, AccountType::Asset | AccountType::Expense)
+    }
+    is_debit_normal(a) == is_debit_normal(b)
 }
 
 /// The full interface for interacting with the ledger — account management,
@@ -102,4 +118,17 @@ pub trait LedgerClient: Send + Sync {
         amount: i64,
     ) -> Result<(), LedgerClientError>;
     fn release_funds(&self, block_client_id: &str) -> Result<(), LedgerClientError>;
+
+    // -- Transfers --
+    /// Post a transfer between two accounts: decrease the sender's balance,
+    /// increase the receiver's balance. Posting direction (Debit/Credit) is
+    /// determined automatically from account type. Both accounts must be
+    /// active and of the same accounting nature.
+    fn post_transfer(
+        &self,
+        client_id: &str,
+        from_account_id: AccountId,
+        to_account_id: AccountId,
+        amount: i64,
+    ) -> Result<(), LedgerClientError>;
 }

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::num::NonZeroU64;
 
 use ledger_api::{
     AccountId as ApiAccountId, AccountSummary, AccountType as ApiAccountType,
@@ -119,6 +120,57 @@ impl<S: LedgerStore> LedgerService<S> {
         }
 
         self.store.persist_journal_entry(client_id, &legs, deltas)
+    }
+
+    pub fn post_transfer(
+        &self,
+        client_id: &str,
+        from_account_id: AccountId,
+        to_account_id: AccountId,
+        amount: i64,
+    ) -> Result<(), LedgerError> {
+        let nonzero_amount = u64::try_from(amount)
+            .ok()
+            .and_then(NonZeroU64::new)
+            .ok_or_else(|| {
+                LedgerError::InvalidInput(format!("transfer amount must be positive, got {amount}"))
+            })?;
+
+        let from = self
+            .store
+            .find_account(from_account_id)?
+            .ok_or(LedgerError::AccountNotFound(from_account_id))?;
+        if !from.active {
+            return Err(LedgerError::AccountNotActive(from_account_id));
+        }
+
+        let to = self
+            .store
+            .find_account(to_account_id)?
+            .ok_or(LedgerError::AccountNotFound(to_account_id))?;
+        if !to.active {
+            return Err(LedgerError::AccountNotActive(to_account_id));
+        }
+
+        if !ledger_api::accounts_compatible(from.account_type, to.account_type) {
+            return Err(LedgerError::AccountsIncompatible);
+        }
+
+        let (from_posting, to_posting) = transfer_postings(from.account_type, nonzero_amount);
+        self.post_journal_entry(
+            client_id,
+            vec![
+                NewLedgerLineInput {
+                    account_id: from_account_id,
+                    posting: from_posting,
+                },
+                NewLedgerLineInput {
+                    account_id: to_account_id,
+                    posting: to_posting,
+                },
+            ],
+        )?;
+        Ok(())
     }
 
     pub fn block_funds(
@@ -255,6 +307,17 @@ impl<S: LedgerStore> LedgerClient for LedgerService<S> {
     fn release_funds(&self, block_client_id: &str) -> Result<(), LedgerClientError> {
         LedgerService::release_funds(self, block_client_id).map_err(to_client_err)
     }
+
+    fn post_transfer(
+        &self,
+        client_id: &str,
+        from_account_id: ApiAccountId,
+        to_account_id: ApiAccountId,
+        amount: i64,
+    ) -> Result<(), LedgerClientError> {
+        LedgerService::post_transfer(self, client_id, from_account_id, to_account_id, amount)
+            .map_err(to_client_err)
+    }
 }
 
 // ── Conversion helpers ────────────────────────────────────────────────────────
@@ -275,6 +338,18 @@ fn journal_leg_to_input(leg: JournalLeg) -> NewLedgerLineInput {
             JournalPosting::Debit(v) => Posting::Debit(v),
             JournalPosting::Credit(v) => Posting::Credit(v),
         },
+    }
+}
+
+/// Returns the (from_posting, to_posting) pair that decreases the sender's
+/// balance and increases the receiver's, given the sender's account type.
+fn transfer_postings(account_type: AccountType, amount: NonZeroU64) -> (Posting, Posting) {
+    if matches!(account_type, AccountType::Asset | AccountType::Expense) {
+        // Debit-normal: Credit decreases balance, Debit increases balance.
+        (Posting::Credit(amount), Posting::Debit(amount))
+    } else {
+        // Credit-normal: Debit decreases balance, Credit increases balance.
+        (Posting::Debit(amount), Posting::Credit(amount))
     }
 }
 
@@ -300,5 +375,6 @@ fn to_client_err(e: LedgerError) -> LedgerClientError {
             available,
             requested,
         },
+        LedgerError::AccountsIncompatible => LedgerClientError::AccountsIncompatible,
     }
 }

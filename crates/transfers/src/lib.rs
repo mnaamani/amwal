@@ -1,9 +1,6 @@
 use std::num::NonZeroU64;
 
-use ledger_api::{
-    AccountId, AccountSummary, AccountType, JournalLeg, JournalPosting, LedgerClient,
-    LedgerClientError,
-};
+use ledger_api::{AccountId, AccountSummary, LedgerClient, LedgerClientError, accounts_compatible};
 
 mod postgres;
 
@@ -76,7 +73,9 @@ fn validate_transfer_request<L: LedgerClient>(
 
     // Validate both accounts share the same accounting nature upfront so we
     // don't create a transfer that will fail at settlement.
-    check_same_nature(from_account.account_type, to_account.account_type)?;
+    if !accounts_compatible(from_account.account_type, to_account.account_type) {
+        return Err(TransferError::AccountsNotSameNature);
+    }
 
     // Other validation checks..(limits, account restrictions, fraud,
     // security checks (recently added beneficiery, recently changed account password)
@@ -168,30 +167,19 @@ pub fn complete_transfer<L: LedgerClient>(
         _ => return Err(TransferError::TransferNotPending),
     }
 
-    let from_account = require_active(ledger, transfer.from_account_id)?;
-
     // amount was validated positive at initiation time; a non-positive value
     // here means the DB record was corrupted by something outside this service.
-    let amount = u64::try_from(transfer.amount)
+    let _ = u64::try_from(transfer.amount)
         .ok()
         .and_then(NonZeroU64::new)
         .expect("transfer amount in DB must be positive — data integrity violation");
 
-    let (from_posting, to_posting) = postings_for(from_account.account_type, amount);
-
     ledger
-        .post_journal_entry(
+        .post_transfer(
             &transfer.client_id,
-            vec![
-                JournalLeg {
-                    account_id: transfer.from_account_id,
-                    posting: from_posting,
-                },
-                JournalLeg {
-                    account_id: transfer.to_account_id,
-                    posting: to_posting,
-                },
-            ],
+            transfer.from_account_id,
+            transfer.to_account_id,
+            transfer.amount,
         )
         .map_err(TransferError::Ledger)?;
 
@@ -271,37 +259,4 @@ fn require_active<L: LedgerClient>(
         )));
     }
     Ok(account)
-}
-
-/// Returns true for accounts whose balance increases on a Debit (Asset, Expense).
-fn is_debit_normal(t: AccountType) -> bool {
-    matches!(t, AccountType::Asset | AccountType::Expense)
-}
-
-/// Transfers are only defined between accounts of the same nature. A transfer
-/// between, say, a Liability and an Asset account would require a contra/
-/// intermediate account and is out of scope here.
-fn check_same_nature(from: AccountType, to: AccountType) -> Result<(), TransferError> {
-    if is_debit_normal(from) != is_debit_normal(to) {
-        return Err(TransferError::AccountsNotSameNature);
-    }
-    Ok(())
-}
-
-/// Returns `(from_posting, to_posting)` such that the sender's balance
-/// decreases and the receiver's balance increases.
-fn postings_for(account_type: AccountType, amount: NonZeroU64) -> (JournalPosting, JournalPosting) {
-    if is_debit_normal(account_type) {
-        // Asset/Expense: Credit decreases, Debit increases.
-        (
-            JournalPosting::Credit(amount),
-            JournalPosting::Debit(amount),
-        )
-    } else {
-        // Liability/Equity/Revenue: Debit decreases, Credit increases.
-        (
-            JournalPosting::Debit(amount),
-            JournalPosting::Credit(amount),
-        )
-    }
 }

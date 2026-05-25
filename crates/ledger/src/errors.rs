@@ -16,4 +16,5 @@ pub enum LedgerError {
         available: i64,
         requested: i64,
     },
+    AccountsIncompatible,
 }
