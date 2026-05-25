@@ -4,9 +4,6 @@ use std::time::SystemTime;
 
 use crate::domain;
 
-// When deriving DbEnum, there will be a duplicate Clone trait derived on the sql_types struct.
-// Manually remove Clone from the sql_types derive in schema.rs to fix the compiler error.
-
 #[derive(Debug, PartialEq, Eq, Copy, Clone, diesel_derive_enum::DbEnum)]
 #[ExistingTypePath = "crate::postgres::schema::sql_types::AccountType"]
 pub(super) enum AccountType {
