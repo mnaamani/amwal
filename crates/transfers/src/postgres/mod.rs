@@ -81,6 +81,19 @@ impl TransferStore {
     /// - If the transfer was `Pending`, it is now `new_status` → returns `new_status`.
     /// - If it was already `new_status` (retry), returns `new_status` unchanged.
     /// - Any other current status is returned as-is; the caller decides the error.
+    pub(crate) fn find_transfers_by_status(
+        &self,
+        status: crate::TransferStatus,
+    ) -> Result<Vec<crate::Transfer>, crate::TransferError> {
+        let mut conn = self.conn()?;
+        dsl::transfer_internal
+            .filter(dsl::status.eq(models::TransferStatus::from(status)))
+            .select(models::TransferInternal::as_select())
+            .load(&mut *conn)
+            .map(|v| v.into_iter().map(Into::into).collect())
+            .map_err(|e| crate::TransferError::Storage(e.to_string()))
+    }
+
     pub(crate) fn claim_pending(
         &self,
         id: i32,

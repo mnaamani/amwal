@@ -227,6 +227,32 @@ pub fn cancel_transfer<L: LedgerClient>(
     store.set_transfer_status(transfer.id, TransferStatus::Cancelled)
 }
 
+// ── Reconciliation ────────────────────────────────────────────────────────────
+
+/// Returns all transfers stuck in `Completing` state.
+///
+/// These had their completion intent recorded but the process crashed before
+/// the journal entry, block release, or final status update completed.
+/// Each entry can be driven to completion by calling `complete_transfer` again —
+/// all ledger operations are idempotent so retrying is always safe.
+pub fn find_stuck_completing_transfers(
+    store: &TransferStore,
+) -> Result<Vec<Transfer>, TransferError> {
+    store.find_transfers_by_status(TransferStatus::Completing)
+}
+
+/// Returns all transfers stuck in `Cancelling` state.
+///
+/// These had their cancellation intent recorded but the process crashed before
+/// the block release or final status update completed.
+/// Each entry can be driven to completion by calling `cancel_transfer` again —
+/// `release_funds` is idempotent so retrying is always safe.
+pub fn find_stuck_cancelling_transfers(
+    store: &TransferStore,
+) -> Result<Vec<Transfer>, TransferError> {
+    store.find_transfers_by_status(TransferStatus::Cancelling)
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn require_active<L: LedgerClient>(
