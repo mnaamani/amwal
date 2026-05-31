@@ -21,6 +21,8 @@ use crate::store::LedgerStore;
 /// - the external [`LedgerClient`] interface consumed by other services
 ///
 /// Use `Arc<LedgerService<S>>` to share a single instance across callers.
+/// Events are published via the transactional outbox — wire up an
+/// [`OutboxRelay`] at startup rather than passing a bus here.
 pub struct LedgerService<S: LedgerStore> {
     store: S,
 }
@@ -119,7 +121,8 @@ impl<S: LedgerStore> LedgerService<S> {
             *deltas.entry(leg.account_id).or_insert(0) += delta;
         }
 
-        self.store.persist_journal_entry(client_id, &legs, deltas)
+        let entry = self.store.persist_journal_entry(client_id, &legs, deltas)?;
+        Ok(entry)
     }
 
     pub fn post_transfer(

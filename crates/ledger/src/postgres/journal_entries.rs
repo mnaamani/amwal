@@ -4,7 +4,7 @@ use diesel::prelude::*;
 
 use super::accounts::storage_err;
 use super::models;
-use super::schema::{accounts, balances, journal_entries, ledger_lines};
+use super::schema::{accounts, balances, journal_entries, ledger_lines, outbox};
 use crate::domain::{
     AccountId, AccountType, Balance, JournalEntry, LedgerLine, NewLedgerLineInput,
 };
@@ -73,6 +73,33 @@ pub(super) fn persist_journal_entry(
                     balances::balance.eq(balances::balance + delta),
                     balances::updated_at.eq(now),
                 ))
+                .execute(conn)
+                .map_err(storage_err)?;
+        }
+
+        // Insert one outbox event per affected account. Reading back the new
+        // balance in the same transaction guarantees the outbox row is consistent
+        // with the balance update that triggered it.
+        for account_id in balance_deltas.keys() {
+            let new_balance: i64 = balances::table
+                .find(*account_id)
+                .select(balances::balance)
+                .first(conn)
+                .map_err(storage_err)?;
+
+            let event = domain_events::DomainEvent::BalanceChanged {
+                account_id: *account_id,
+                new_balance,
+                journal_entry_id: entry.id,
+            };
+            let payload =
+                serde_json::to_value(&event).map_err(|e| LedgerError::Storage(e.to_string()))?;
+
+            diesel::insert_into(outbox::table)
+                .values(models::NewOutboxEvent {
+                    event_type: "BalanceChanged",
+                    payload,
+                })
                 .execute(conn)
                 .map_err(storage_err)?;
         }

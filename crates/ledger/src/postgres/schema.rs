@@ -64,6 +64,16 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    outbox (id) {
+        id -> Int8,
+        event_type -> Varchar,
+        payload -> Jsonb,
+        created_at -> Timestamp,
+        delivered_at -> Nullable<Timestamp>,
+    }
+}
+
 diesel::joinable!(account_blocks -> accounts (account_id));
 diesel::joinable!(balances -> accounts (account_id));
 diesel::joinable!(ledger_lines -> accounts (account));
@@ -75,4 +85,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     balances,
     journal_entries,
     ledger_lines,
+    outbox,
 );

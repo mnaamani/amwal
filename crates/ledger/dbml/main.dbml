@@ -54,3 +54,18 @@ Table account_blocks {
   "created_at" timestamp [not null, default: `now()`]
   "updated_at" timestamp
 }
+
+// Transactional outbox — events written atomically with the balance update and
+// relayed to the in-process EventBus by OutboxRelay. delivered_at is stamped
+// once the event has been published; NULL rows are pending delivery.
+Table outbox {
+  "id" bigserial [pk, increment]
+  "event_type" varchar [not null]
+  "payload" jsonb [not null]
+  "created_at" timestamp [not null, default: `now()`]
+  "delivered_at" timestamp
+
+  indexes {
+    (id) [name: 'outbox_undelivered', where: `delivered_at IS NULL`]
+  }
+}

@@ -10,6 +10,8 @@ mod journal_entries;
 mod models;
 mod schema;
 
+use schema::outbox::dsl as outbox_dsl;
+
 use crate::domain::{
     Account, AccountBlock, AccountId, AccountType, Balance, JournalEntry, LedgerLine,
     NewLedgerLineInput,
@@ -28,8 +30,15 @@ impl From<diesel::result::Error> for LedgerError {
     }
 }
 
+/// A pending event from the outbox, ready to be published and marked delivered.
+pub(crate) struct OutboxItem {
+    pub(crate) id: i64,
+    pub(crate) payload: serde_json::Value,
+}
+
 /// Postgres-backed implementation of [`LedgerStore`].
 /// Pure storage — no business rules, no validation.
+#[derive(Clone)]
 pub struct PostgresLedgerStore {
     pool: PgPool,
 }
@@ -53,6 +62,37 @@ impl PostgresLedgerStore {
     fn conn(&self) -> Result<PgConn, LedgerError> {
         self.pool
             .get()
+            .map_err(|e| LedgerError::Storage(e.to_string()))
+    }
+
+    /// Fetch undelivered outbox events in insertion order. `limit` bounds the
+    /// batch size so the relay never tries to publish an unbounded set at once.
+    pub(crate) fn fetch_pending_outbox(&self, limit: i64) -> Result<Vec<OutboxItem>, LedgerError> {
+        let mut conn = self.conn()?;
+        outbox_dsl::outbox
+            .filter(outbox_dsl::delivered_at.is_null())
+            .order(outbox_dsl::id.asc())
+            .limit(limit)
+            .select(models::OutboxRow::as_select())
+            .load(&mut *conn)
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|r| OutboxItem {
+                        id: r.id,
+                        payload: r.payload,
+                    })
+                    .collect()
+            })
+            .map_err(|e| LedgerError::Storage(e.to_string()))
+    }
+
+    /// Stamp a row as delivered so the relay does not re-publish it.
+    pub(crate) fn mark_outbox_delivered(&self, id: i64) -> Result<(), LedgerError> {
+        let mut conn = self.conn()?;
+        diesel::update(outbox_dsl::outbox.find(id))
+            .set(outbox_dsl::delivered_at.eq(std::time::SystemTime::now()))
+            .execute(&mut *conn)
+            .map(|_| ())
             .map_err(|e| LedgerError::Storage(e.to_string()))
     }
 }

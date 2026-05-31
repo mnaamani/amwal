@@ -1,4 +1,4 @@
-use super::schema::{account_blocks, accounts, balances, journal_entries, ledger_lines};
+use super::schema::{account_blocks, accounts, balances, journal_entries, ledger_lines, outbox};
 use diesel::prelude::*;
 use std::time::SystemTime;
 
@@ -191,4 +191,24 @@ pub(super) struct NewAccountBlock<'a> {
     pub client_id: &'a str,
     pub account_id: i32,
     pub amount: i64,
+}
+
+// ── Outbox ────────────────────────────────────────────────────────────────────
+
+#[derive(Queryable, Selectable, Identifiable)]
+#[diesel(table_name = outbox)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub(super) struct OutboxRow {
+    pub id: i64,
+    pub event_type: String,
+    pub payload: serde_json::Value,
+    pub created_at: SystemTime,
+    pub delivered_at: Option<SystemTime>,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = outbox)]
+pub(super) struct NewOutboxEvent<'a> {
+    pub event_type: &'a str,
+    pub payload: serde_json::Value,
 }

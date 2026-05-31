@@ -1,5 +1,6 @@
 pub mod domain;
 pub mod errors;
+pub mod outbox;
 pub mod service;
 pub mod store;
 
@@ -10,6 +11,7 @@ pub use domain::{
     LedgerLineId, NewLedgerLineInput, Posting, TrialBalanceReport,
 };
 pub use errors::LedgerError;
+pub use outbox::OutboxRelay;
 pub use postgres::PostgresLedgerStore;
 pub use service::LedgerService;
 pub use store::LedgerStore;
