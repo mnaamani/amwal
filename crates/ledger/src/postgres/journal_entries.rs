@@ -126,6 +126,7 @@ pub(super) fn find_ledger_lines(
 ) -> Result<Vec<LedgerLine>, LedgerError> {
     ledger_lines::table
         .filter(ledger_lines::account.eq(account_id))
+        .order(ledger_lines::id.asc())
         .select(models::LedgerLine::as_select())
         .load(conn)
         .map(|v| v.into_iter().map(Into::into).collect())

@@ -1,5 +1,6 @@
 use std::num::NonZeroU64;
 use std::str::FromStr;
+use std::time::SystemTime;
 
 /// Opaque account identifier — mirrors ledger's internal AccountId.
 pub type AccountId = i32;
@@ -45,6 +46,13 @@ pub struct AccountSummary {
 pub enum JournalPosting {
     Debit(NonZeroU64),
     Credit(NonZeroU64),
+}
+
+/// The account balance after a specific journal entry was posted.
+/// Used to reconstruct balance history.
+pub struct BalanceSnapshot {
+    pub timestamp: SystemTime,
+    pub balance: i64,
 }
 
 /// A single leg of a journal entry submitted to the ledger.
@@ -118,6 +126,15 @@ pub trait LedgerClient: Send + Sync {
         amount: i64,
     ) -> Result<(), LedgerClientError>;
     fn release_funds(&self, block_client_id: &str) -> Result<(), LedgerClientError>;
+
+    // -- History --
+    /// Returns the running balance after each journal posting, in chronological
+    /// order. Used by consumers that need to reason about balance over time
+    /// without coupling to ledger internals.
+    fn get_balance_history(
+        &self,
+        account_id: AccountId,
+    ) -> Result<Vec<BalanceSnapshot>, LedgerClientError>;
 
     // -- Transfers --
     /// Post a transfer between two accounts: decrease the sender's balance,

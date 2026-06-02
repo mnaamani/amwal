@@ -282,6 +282,40 @@ impl<S: LedgerStore> LedgerClient for LedgerService<S> {
             .map_err(to_client_err)
     }
 
+    fn get_balance_history(
+        &self,
+        account_id: ApiAccountId,
+    ) -> Result<Vec<ledger_api::BalanceSnapshot>, LedgerClientError> {
+        let account = self
+            .store
+            .find_account(account_id)
+            .map_err(to_client_err)?
+            .ok_or(LedgerClientError::AccountNotFound(account_id))?;
+
+        let lines = self
+            .store
+            .find_ledger_lines(account_id)
+            .map_err(to_client_err)?;
+
+        let mut running: i64 = 0;
+        let snapshots = lines
+            .into_iter()
+            .map(|line| {
+                let delta = match account.account_type {
+                    AccountType::Asset | AccountType::Expense => line.debit - line.credit,
+                    _ => line.credit - line.debit,
+                };
+                running += delta;
+                ledger_api::BalanceSnapshot {
+                    timestamp: line.created_at,
+                    balance: running,
+                }
+            })
+            .collect();
+
+        Ok(snapshots)
+    }
+
     fn get_available_balance(&self, id: ApiAccountId) -> Result<i64, LedgerClientError> {
         LedgerService::get_available_balance(self, id).map_err(to_client_err)
     }
