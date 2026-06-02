@@ -1,0 +1,7 @@
+[package]
+name = "event-consumer-demo"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+domain-events = { path = "../domain-events" }
