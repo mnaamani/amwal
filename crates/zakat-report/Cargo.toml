@@ -1,0 +1,18 @@
+[package]
+name = "zakat-report"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[[bin]]
+name = "zakat-report"
+path = "src/main.rs"
+
+[dependencies]
+ledger = { path = "../ledger" }
+ledger-api = { path = "../ledger-api" }
+zakat-calculator = { path = "../zakat-calculator" }
+ureq = { version = "2", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+anyhow = "1"
+chrono = "0.4"

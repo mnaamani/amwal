@@ -1,3 +1,3 @@
 [workspace]
-members = ["crates/ledger-api", "crates/ledger", "crates/transfers", "crates/domain-events", "crates/event-consumer-demo"]
+members = ["crates/ledger-api", "crates/ledger", "crates/transfers", "crates/domain-events", "crates/event-consumer-demo", "crates/zakat-calculator", "crates/zakat-report"]
 resolver = "2"
