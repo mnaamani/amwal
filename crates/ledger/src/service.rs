@@ -22,7 +22,7 @@ use crate::store::LedgerStore;
 ///
 /// Use `Arc<LedgerService<S>>` to share a single instance across callers.
 /// Events are published via the transactional outbox — wire up an
-/// [`OutboxRelay`] at startup rather than passing a bus here.
+/// [`OutboxRelay`](crate::OutboxRelay) at startup rather than passing a bus here.
 pub struct LedgerService<S: LedgerStore> {
     store: S,
 }

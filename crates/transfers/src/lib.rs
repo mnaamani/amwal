@@ -6,52 +6,92 @@ mod postgres;
 
 pub use postgres::TransferStore;
 
+/// Internal identifier for a transfer record. Opaque to callers.
 pub type TransferInternalId = i32;
 
+/// The lifecycle state of a transfer.
+///
+/// State machine (happy path and cancellation path):
+///
+/// ```text
+///  initiate_transfer
+///        │
+///        ▼
+///     Pending ──── complete_transfer ──▶ Completing ──▶ Completed
+///        │
+///        └────────── cancel_transfer ──▶ Cancelling ──▶ Cancelled
+///
+///  Any state ──── block_funds failure ──▶ Failed
+/// ```
+///
+/// The intermediate states (`Completing`, `Cancelling`) capture intent
+/// atomically before any ledger write, so concurrent calls to
+/// `complete_transfer` and `cancel_transfer` cannot both proceed.
+/// Stuck transfers in either intermediate state are safe to retry.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TransferStatus {
+    /// Funds are blocked; waiting for completion or cancellation.
     Pending,
-    /// Intent to cancel has been recorded; release_funds is in progress.
+    /// Intent to cancel recorded; `release_funds` in progress.
     Cancelling,
+    /// Block released; transfer voided.
     Cancelled,
-    /// Intent to complete has been recorded; journal posting is in progress.
+    /// Intent to complete recorded; journal posting in progress.
     Completing,
+    /// Journal entry posted and block released.
     Completed,
+    /// Non-retryable failure (e.g. could not block funds at initiation).
     Failed,
 }
 
+/// A transfer record as stored in the transfer service's own database.
 pub struct Transfer {
     pub id: TransferInternalId,
+    /// Caller-supplied idempotency key — identifies this transfer uniquely
+    /// across retries.
     pub client_id: String,
     pub from_account_id: AccountId,
     pub to_account_id: AccountId,
+    /// Amount in fils (smallest currency unit).
     pub amount: i64,
     pub status: TransferStatus,
 }
 
+/// Input for initiating a new transfer.
 pub struct TransferRequest {
+    /// Idempotency key. A second call with the same `client_id` returns the
+    /// existing transfer rather than creating a new one.
     pub client_id: String,
     pub from_account_id: AccountId,
     pub to_account_id: AccountId,
+    /// Amount in fils. Must be positive and non-zero.
     pub amount: i64,
 }
 
+/// Errors returned by transfer operations.
 #[derive(Debug)]
 pub enum TransferError {
+    /// A ledger operation failed — inspect the inner error for details.
     Ledger(LedgerClientError),
+    /// A storage or database error — transient, safe to retry.
     Storage(String),
-    InsufficientFunds {
-        available: i64,
-        requested: i64,
-    },
+    /// The sender's available balance is insufficient.
+    InsufficientFunds { available: i64, requested: i64 },
+    /// No transfer exists with the given `client_id`.
     TransferNotFound,
+    /// The transfer exists but is not in `Pending` state and cannot be
+    /// driven forward by the requested operation.
     TransferNotPending,
-    /// complete_transfer was called on a transfer already being cancelled.
+    /// `complete_transfer` was called on a transfer already being cancelled.
     TransferBeingCancelled,
-    /// cancel_transfer was called on a transfer already being completed.
+    /// `cancel_transfer` was called on a transfer already being completed.
     TransferBeingCompleted,
+    /// The requested amount is zero or negative.
     AmountNotPositive(i64),
+    /// The sender and receiver are the same account.
     AccountsNotDistinct,
+    /// The two accounts have incompatible accounting natures (one debit-normal,
+    /// one credit-normal) and cannot participate in a direct transfer.
     AccountsNotSameNature,
 }
 
@@ -96,7 +136,16 @@ fn ensure_available_funds<L: LedgerClient>(
     Ok(())
 }
 
-/// Create a pending transfer and block funds on the sender's account.
+/// Validate the request, record a `Pending` transfer, and block the funds.
+///
+/// Idempotent on `client_id`: if a `Pending` transfer with the same key
+/// already exists (e.g. a prior call that timed out before responding), the
+/// existing record is returned and `block_funds` is retried — which is itself
+/// idempotent. Any other existing status returns `TransferNotPending`.
+///
+/// On success the sender's available balance is reduced by `amount` fils for
+/// the duration of the transfer. Call [`complete_transfer`] to post the journal
+/// entry and release the block, or [`cancel_transfer`] to just release it.
 pub fn initiate_transfer<L: LedgerClient>(
     ledger: &L,
     store: &TransferStore,
