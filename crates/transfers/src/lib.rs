@@ -68,6 +68,12 @@ pub struct TransferRequest {
     pub amount: i64,
 }
 
+impl From<LedgerClientError> for TransferError {
+    fn from(e: LedgerClientError) -> Self {
+        TransferError::Ledger(e)
+    }
+}
+
 /// Errors returned by transfer operations.
 #[derive(Debug)]
 pub enum TransferError {
@@ -124,9 +130,7 @@ fn ensure_available_funds<L: LedgerClient>(
     ledger: &L,
     request: &TransferRequest,
 ) -> Result<(), TransferError> {
-    let available = ledger
-        .get_available_balance(request.from_account_id)
-        .map_err(TransferError::Ledger)?;
+    let available = ledger.get_available_balance(request.from_account_id)?;
     if available < request.amount {
         return Err(TransferError::InsufficientFunds {
             available,
@@ -176,9 +180,8 @@ pub fn initiate_transfer<L: LedgerClient>(
         transfer.from_account_id,
         transfer.amount,
     ) {
-        // Set the status failed if we are unable to block funds
         let _ = store.set_transfer_status(transfer.id, TransferStatus::Failed);
-        return Err(TransferError::Ledger(e));
+        return Err(e.into());
     }
 
     Ok(transfer)
@@ -218,18 +221,14 @@ pub fn complete_transfer<L: LedgerClient>(
         .and_then(NonZeroU64::new)
         .expect("transfer amount in DB must be positive — data integrity violation");
 
-    ledger
-        .post_transfer(
-            &transfer.client_id,
-            transfer.from_account_id,
-            transfer.to_account_id,
-            transfer.amount,
-        )
-        .map_err(TransferError::Ledger)?;
+    ledger.post_transfer(
+        &transfer.client_id,
+        transfer.from_account_id,
+        transfer.to_account_id,
+        transfer.amount,
+    )?;
 
-    ledger
-        .release_funds(&transfer.client_id)
-        .map_err(TransferError::Ledger)?;
+    ledger.release_funds(&transfer.client_id)?;
 
     store.set_transfer_status(transfer.id, TransferStatus::Completed)
 }
@@ -252,9 +251,7 @@ pub fn cancel_transfer<L: LedgerClient>(
         _ => return Err(TransferError::TransferNotPending),
     }
 
-    ledger
-        .release_funds(&transfer.client_id)
-        .map_err(TransferError::Ledger)?;
+    ledger.release_funds(&transfer.client_id)?;
 
     store.set_transfer_status(transfer.id, TransferStatus::Cancelled)
 }
@@ -292,15 +289,10 @@ fn require_active<L: LedgerClient>(
     account_id: AccountId,
 ) -> Result<AccountSummary, TransferError> {
     let account = ledger
-        .get_account(account_id)
-        .map_err(TransferError::Ledger)?
-        .ok_or(TransferError::Ledger(LedgerClientError::AccountNotFound(
-            account_id,
-        )))?;
+        .get_account(account_id)?
+        .ok_or(LedgerClientError::AccountNotFound(account_id))?;
     if !account.active {
-        return Err(TransferError::Ledger(LedgerClientError::AccountNotActive(
-            account_id,
-        )));
+        return Err(LedgerClientError::AccountNotActive(account_id).into());
     }
     Ok(account)
 }

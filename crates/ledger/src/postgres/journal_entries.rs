@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use diesel::prelude::*;
 
-use super::accounts::storage_err;
 use super::models;
 use super::schema::{accounts, balances, journal_entries, ledger_lines, outbox};
 use crate::domain::{
@@ -19,10 +18,6 @@ use crate::errors::LedgerError;
 /// Because all writes happen inside a single transaction, the presence of the
 /// journal entry row guarantees the lines and balance deltas were also
 /// committed — so returning early on a duplicate is always safe.
-///
-/// Alternative: `INSERT … ON CONFLICT (client_id) DO NOTHING RETURNING *`
-/// would achieve the same in one round trip if latency becomes a concern,
-/// at the cost of hiding this at the database layer.
 pub(super) fn persist_journal_entry(
     conn: &mut PgConnection,
     client_id: &str,
@@ -46,9 +41,9 @@ pub(super) fn persist_journal_entry(
                     .select(models::JournalEntry::as_select())
                     .first(conn)
                     .map(Into::into)
-                    .map_err(storage_err);
+                    .map_err(LedgerError::from);
             }
-            Err(e) => return Err(storage_err(e)),
+            Err(e) => return Err(e.into()),
         };
 
         let new_lines: Vec<models::NewLedgerLine> = legs
@@ -63,8 +58,7 @@ pub(super) fn persist_journal_entry(
 
         diesel::insert_into(ledger_lines::table)
             .values(&new_lines)
-            .execute(conn)
-            .map_err(storage_err)?;
+            .execute(conn)?;
 
         let now = std::time::SystemTime::now();
         for (account_id, delta) in &balance_deltas {
@@ -73,8 +67,7 @@ pub(super) fn persist_journal_entry(
                     balances::balance.eq(balances::balance + delta),
                     balances::updated_at.eq(now),
                 ))
-                .execute(conn)
-                .map_err(storage_err)?;
+                .execute(conn)?;
         }
 
         // Insert one outbox event per affected account. Reading back the new
@@ -84,8 +77,7 @@ pub(super) fn persist_journal_entry(
             let new_balance: i64 = balances::table
                 .find(*account_id)
                 .select(balances::balance)
-                .first(conn)
-                .map_err(storage_err)?;
+                .first(conn)?;
 
             let event = domain_events::DomainEvent::BalanceChanged {
                 account_id: *account_id,
@@ -100,8 +92,7 @@ pub(super) fn persist_journal_entry(
                     event_type: "BalanceChanged",
                     payload,
                 })
-                .execute(conn)
-                .map_err(storage_err)?;
+                .execute(conn)?;
         }
 
         Ok(entry.into())
@@ -117,7 +108,7 @@ pub(super) fn find_balance(
         .select(models::Balance::as_select())
         .first(conn)
         .map(Into::into)
-        .map_err(storage_err)
+        .map_err(LedgerError::from)
 }
 
 pub(super) fn find_ledger_lines(
@@ -130,7 +121,7 @@ pub(super) fn find_ledger_lines(
         .select(models::LedgerLine::as_select())
         .load(conn)
         .map(|v| v.into_iter().map(Into::into).collect())
-        .map_err(storage_err)
+        .map_err(LedgerError::from)
 }
 
 pub(super) fn aggregate_balances_by_type(
@@ -140,7 +131,7 @@ pub(super) fn aggregate_balances_by_type(
         .inner_join(accounts::table)
         .select((accounts::account_type, balances::balance))
         .load(conn)
-        .map_err(storage_err)?;
+        .map_err(LedgerError::from)?;
 
     Ok(rows.into_iter().map(|(t, b)| (t.into(), b)).collect())
 }

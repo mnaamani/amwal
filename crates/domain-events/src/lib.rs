@@ -29,6 +29,7 @@ pub enum DomainEvent {
 /// To replace with an external broker (NATS, Kafka, etc.), implement the same
 /// `publish` / `subscribe` contract on a new struct; the ledger and consumer
 /// crates need no changes.
+#[derive(Default)]
 pub struct EventBus {
     senders: Vec<SyncSender<DomainEvent>>,
 }
@@ -55,11 +56,5 @@ impl EventBus {
         for sender in &self.senders {
             let _ = sender.send(event.clone());
         }
-    }
-}
-
-impl Default for EventBus {
-    fn default() -> Self {
-        Self::new()
     }
 }

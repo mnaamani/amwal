@@ -22,7 +22,7 @@ pub(super) fn insert_account(
         .returning(models::Account::as_returning())
         .get_result(conn)
         .map(Into::into)
-        .map_err(storage_err)
+        .map_err(LedgerError::from)
 }
 
 pub(super) fn set_account_active(
@@ -36,8 +36,7 @@ pub(super) fn set_account_active(
                 accts::updated_at.eq(SystemTime::now()),
             ))
             .returning(models::Account::as_returning())
-            .get_result(conn)
-            .map_err(storage_err)?;
+            .get_result(conn)?;
 
         diesel::insert_into(balances::table)
             .values(models::NewBalance {
@@ -45,8 +44,7 @@ pub(super) fn set_account_active(
                 balance: 0,
             })
             .on_conflict_do_nothing()
-            .execute(conn)
-            .map_err(storage_err)?;
+            .execute(conn)?;
 
         Ok(account.into())
     })
@@ -62,7 +60,7 @@ pub(super) fn find_account(
         .first(conn)
         .optional()
         .map(|opt| opt.map(Into::into))
-        .map_err(storage_err)
+        .map_err(LedgerError::from)
 }
 
 pub(super) fn find_accounts_by_ids(
@@ -74,7 +72,7 @@ pub(super) fn find_accounts_by_ids(
         .select(models::Account::as_select())
         .load(conn)
         .map(|v| v.into_iter().map(Into::into).collect())
-        .map_err(storage_err)
+        .map_err(LedgerError::from)
 }
 
 pub(super) fn list_active_accounts(conn: &mut PgConnection) -> Result<Vec<Account>, LedgerError> {
@@ -83,7 +81,7 @@ pub(super) fn list_active_accounts(conn: &mut PgConnection) -> Result<Vec<Accoun
         .select(models::Account::as_select())
         .load(conn)
         .map(|v| v.into_iter().map(Into::into).collect())
-        .map_err(storage_err)
+        .map_err(LedgerError::from)
 }
 
 pub(super) fn sum_unreleased_blocks(
@@ -97,7 +95,7 @@ pub(super) fn sum_unreleased_blocks(
         .filter(account_blocks::released.eq(false))
         .select(sql::<BigInt>("COALESCE(SUM(amount), 0)"))
         .first::<i64>(conn)
-        .map_err(storage_err)
+        .map_err(LedgerError::from)
 }
 
 /// Atomically check available balance and insert a block.
@@ -110,22 +108,17 @@ pub(super) fn sum_unreleased_blocks(
 /// The idempotency check happens inside the transaction so that two concurrent
 /// retries cannot both pass the check and race to insert — the losing INSERT
 /// gets a UniqueViolation which is caught and resolved with a follow-up fetch.
-///
-/// Alternative: `INSERT … ON CONFLICT (client_id) DO NOTHING RETURNING *`
-/// would collapse the retry path into one round trip at the cost of
-/// Postgres-specific SQL.
 pub(super) fn apply_account_block(
     conn: &mut PgConnection,
     client_id: &str,
     account_id: AccountId,
     amount: i64,
 ) -> Result<AccountBlock, LedgerError> {
-    conn.transaction(|conn| {
+    conn.transaction::<AccountBlock, LedgerError, _>(|conn| {
         let balance: i64 = balances::table
             .find(account_id)
             .select(balances::balance)
-            .first(conn)
-            .map_err(storage_err)?;
+            .first(conn)?;
         let blocked = sum_unreleased_blocks(conn, account_id)?;
         let available = balance - blocked;
         if available < amount {
@@ -153,8 +146,8 @@ pub(super) fn apply_account_block(
                 .select(models::AccountBlock::as_select())
                 .first(conn)
                 .map(Into::into)
-                .map_err(storage_err),
-            Err(e) => Err(storage_err(e)),
+                .map_err(LedgerError::from),
+            Err(e) => Err(e.into()),
         }
     })
 }
@@ -182,19 +175,12 @@ pub(super) fn release_account_block(
         // NotFound means either already released or the client_id doesn't exist.
         // Fetch the row to distinguish: if it exists (released=true) we return
         // it as a no-op success; if it's genuinely missing we propagate the error.
-        //
-        // Alternative: a single `ON CONFLICT … DO NOTHING` or a conditional
-        // UPDATE with RETURNING would collapse this into one round trip.
         Err(diesel::result::Error::NotFound) => account_blocks::table
             .filter(account_blocks::client_id.eq(client_id))
             .select(models::AccountBlock::as_select())
             .first(conn)
             .map(Into::into)
-            .map_err(storage_err),
-        Err(e) => Err(storage_err(e)),
+            .map_err(LedgerError::from),
+        Err(e) => Err(e.into()),
     }
-}
-
-pub(super) fn storage_err(e: diesel::result::Error) -> LedgerError {
-    LedgerError::Storage(e.to_string())
 }

@@ -241,35 +241,35 @@ impl<S: LedgerStore> LedgerClient for LedgerService<S> {
         account_type: ApiAccountType,
     ) -> Result<AccountSummary, LedgerClientError> {
         LedgerService::create_account(self, client_id, name, account_type)
-            .map(account_to_summary)
-            .map_err(to_client_err)
+            .map(Into::into)
+            .map_err(Into::into)
     }
 
     fn activate_account(&self, id: ApiAccountId) -> Result<AccountSummary, LedgerClientError> {
         LedgerService::activate_account(self, id)
-            .map(account_to_summary)
-            .map_err(to_client_err)
+            .map(Into::into)
+            .map_err(Into::into)
     }
 
     fn get_account(&self, id: ApiAccountId) -> Result<Option<AccountSummary>, LedgerClientError> {
         self.store
             .find_account(id)
-            .map(|opt| opt.map(account_to_summary))
-            .map_err(to_client_err)
+            .map(|opt| opt.map(Into::into))
+            .map_err(Into::into)
     }
 
     fn list_active_accounts(&self) -> Result<Vec<AccountSummary>, LedgerClientError> {
         self.store
             .list_active_accounts()
-            .map(|v| v.into_iter().map(account_to_summary).collect())
-            .map_err(to_client_err)
+            .map(|v| v.into_iter().map(Into::into).collect())
+            .map_err(Into::into)
     }
 
     fn get_account_balance(&self, id: ApiAccountId) -> Result<i64, LedgerClientError> {
         self.store
             .find_balance(id)
             .map(|b| b.balance)
-            .map_err(to_client_err)
+            .map_err(Into::into)
     }
 
     fn get_balance_history(
@@ -278,14 +278,10 @@ impl<S: LedgerStore> LedgerClient for LedgerService<S> {
     ) -> Result<Vec<ledger_api::BalanceSnapshot>, LedgerClientError> {
         let account = self
             .store
-            .find_account(account_id)
-            .map_err(to_client_err)?
+            .find_account(account_id)?
             .ok_or(LedgerClientError::AccountNotFound(account_id))?;
 
-        let lines = self
-            .store
-            .find_ledger_lines(account_id)
-            .map_err(to_client_err)?;
+        let lines = self.store.find_ledger_lines(account_id)?;
 
         let mut running: i64 = 0;
         let snapshots = lines
@@ -307,7 +303,7 @@ impl<S: LedgerStore> LedgerClient for LedgerService<S> {
     }
 
     fn get_available_balance(&self, id: ApiAccountId) -> Result<i64, LedgerClientError> {
-        LedgerService::get_available_balance(self, id).map_err(to_client_err)
+        LedgerService::get_available_balance(self, id).map_err(Into::into)
     }
 
     fn post_journal_entry(
@@ -315,11 +311,13 @@ impl<S: LedgerStore> LedgerClient for LedgerService<S> {
         client_id: &str,
         legs: Vec<JournalLeg>,
     ) -> Result<ApiJournalEntryId, LedgerClientError> {
-        let domain_legs: Vec<NewLedgerLineInput> =
-            legs.into_iter().map(journal_leg_to_input).collect();
-        LedgerService::post_journal_entry(self, client_id, domain_legs)
-            .map(|e| e.id)
-            .map_err(to_client_err)
+        LedgerService::post_journal_entry(
+            self,
+            client_id,
+            legs.into_iter().map(Into::into).collect(),
+        )
+        .map(|e| e.id)
+        .map_err(Into::into)
     }
 
     fn block_funds(
@@ -328,11 +326,11 @@ impl<S: LedgerStore> LedgerClient for LedgerService<S> {
         account_id: ApiAccountId,
         amount: i64,
     ) -> Result<(), LedgerClientError> {
-        LedgerService::block_funds(self, client_id, account_id, amount).map_err(to_client_err)
+        LedgerService::block_funds(self, client_id, account_id, amount).map_err(Into::into)
     }
 
     fn release_funds(&self, block_client_id: &str) -> Result<(), LedgerClientError> {
-        LedgerService::release_funds(self, block_client_id).map_err(to_client_err)
+        LedgerService::release_funds(self, block_client_id).map_err(Into::into)
     }
 
     fn post_transfer(
@@ -343,28 +341,66 @@ impl<S: LedgerStore> LedgerClient for LedgerService<S> {
         amount: i64,
     ) -> Result<(), LedgerClientError> {
         LedgerService::post_transfer(self, client_id, from_account_id, to_account_id, amount)
-            .map_err(to_client_err)
+            .map_err(Into::into)
     }
 }
 
-// ── Conversion helpers ────────────────────────────────────────────────────────
+// ── Conversions ───────────────────────────────────────────────────────────────
 
-fn account_to_summary(a: Account) -> AccountSummary {
-    AccountSummary {
-        id: a.id,
-        active: a.active,
-        name: a.name,
-        account_type: a.account_type,
+impl From<Account> for AccountSummary {
+    fn from(a: Account) -> Self {
+        AccountSummary {
+            id: a.id,
+            active: a.active,
+            name: a.name,
+            account_type: a.account_type,
+        }
     }
 }
 
-fn journal_leg_to_input(leg: JournalLeg) -> NewLedgerLineInput {
-    NewLedgerLineInput {
-        account_id: leg.account_id,
-        posting: match leg.posting {
+impl From<JournalPosting> for Posting {
+    fn from(p: JournalPosting) -> Self {
+        match p {
             JournalPosting::Debit(v) => Posting::Debit(v),
             JournalPosting::Credit(v) => Posting::Credit(v),
-        },
+        }
+    }
+}
+
+impl From<JournalLeg> for NewLedgerLineInput {
+    fn from(leg: JournalLeg) -> Self {
+        NewLedgerLineInput {
+            account_id: leg.account_id,
+            posting: leg.posting.into(),
+        }
+    }
+}
+
+impl From<LedgerError> for LedgerClientError {
+    fn from(e: LedgerError) -> Self {
+        match e {
+            LedgerError::AccountNotFound(id) => LedgerClientError::AccountNotFound(id),
+            LedgerError::AccountNotActive(id) => LedgerClientError::AccountNotActive(id),
+            LedgerError::ImbalancedEntry {
+                total_debits,
+                total_credits,
+            } => LedgerClientError::ImbalancedEntry {
+                total_debits,
+                total_credits,
+            },
+            LedgerError::InvalidJournalEntry(s)
+            | LedgerError::InvalidLedgerLine(s)
+            | LedgerError::InvalidInput(s) => LedgerClientError::InvalidRequest(s),
+            LedgerError::Storage(s) => LedgerClientError::Unavailable(s),
+            LedgerError::InsufficientFunds {
+                available,
+                requested,
+            } => LedgerClientError::InsufficientFunds {
+                available,
+                requested,
+            },
+            LedgerError::AccountsIncompatible => LedgerClientError::AccountsIncompatible,
+        }
     }
 }
 
@@ -377,31 +413,5 @@ fn transfer_postings(account_type: AccountType, amount: NonZeroU64) -> (Posting,
     } else {
         // Credit-normal: Debit decreases balance, Credit increases balance.
         (Posting::Debit(amount), Posting::Credit(amount))
-    }
-}
-
-fn to_client_err(e: LedgerError) -> LedgerClientError {
-    match e {
-        LedgerError::AccountNotFound(id) => LedgerClientError::AccountNotFound(id),
-        LedgerError::AccountNotActive(id) => LedgerClientError::AccountNotActive(id),
-        LedgerError::ImbalancedEntry {
-            total_debits,
-            total_credits,
-        } => LedgerClientError::ImbalancedEntry {
-            total_debits,
-            total_credits,
-        },
-        LedgerError::InvalidJournalEntry(s)
-        | LedgerError::InvalidLedgerLine(s)
-        | LedgerError::InvalidInput(s) => LedgerClientError::InvalidRequest(s),
-        LedgerError::Storage(s) => LedgerClientError::Unavailable(s),
-        LedgerError::InsufficientFunds {
-            available,
-            requested,
-        } => LedgerClientError::InsufficientFunds {
-            available,
-            requested,
-        },
-        LedgerError::AccountsIncompatible => LedgerClientError::AccountsIncompatible,
     }
 }
