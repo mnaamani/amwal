@@ -82,6 +82,14 @@ fn fetch_nisab_fils(madhab: Madhab, standard: NisabStandard) -> anyhow::Result<i
     Ok((aed * 100.0).round() as i64)
 }
 
+// ── Report data ───────────────────────────────────────────────────────────────
+
+struct AccountData {
+    id: i32,
+    name: String,
+    history: Vec<BalanceSnapshot>,
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn fmt_aed(fils: i64) -> String {
@@ -110,19 +118,12 @@ fn main() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("{e:?}"))?;
     println!("Scanning {} active accounts...\n", accounts.len());
 
-    // Collect all per-account histories once; we run both reports from them.
-    struct AccountData {
-        id: i32,
-        name: String,
-        history: Vec<BalanceSnapshot>,
-    }
-
+    // Load every account's balance history once; both reports share the same data.
     let mut account_data: Vec<AccountData> = Vec::new();
     for account in accounts {
-        let ledger_history = ledger
+        let history = ledger
             .get_balance_history(account.id)
-            .map_err(|e| anyhow::anyhow!("{e:?}"))?;
-        let history: Vec<BalanceSnapshot> = ledger_history
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?
             .into_iter()
             .map(|s| BalanceSnapshot {
                 timestamp: s.timestamp,
@@ -142,7 +143,6 @@ fn main() -> anyhow::Result<()> {
     println!("══════════════════════════════════════════════\n");
 
     let mut due_count = 0usize;
-
     for ad in &account_data {
         let Some(a) = assess_account(&ad.history, nisab_fils) else {
             continue;
@@ -167,9 +167,6 @@ fn main() -> anyhow::Result<()> {
     }
 
     // ── Arrears report ────────────────────────────────────────────────────────
-    // Per SS-35 §5/3/2: "On collection, the Institution has to pay Zakah for
-    // the whole past period." Each year's obligation is independent and
-    // computed at that year's accrual-date balance.
     println!("══════════════════════════════════════════════");
     println!(" ZAKAT ARREARS (ALL UNPAID PERIODS)");
     println!("══════════════════════════════════════════════\n");
@@ -189,7 +186,6 @@ fn main() -> anyhow::Result<()> {
 
         println!("Account #{} — {}", ad.id, ad.name);
         for (i, p) in periods.iter().enumerate() {
-            // Show the deduction only when it is non-zero so year 1 stays clean.
             let deduction_note = if p.prior_zakat_deducted > 0 {
                 format!("  less prior debt {}  →", fmt_aed(p.prior_zakat_deducted))
             } else {
@@ -220,10 +216,9 @@ fn main() -> anyhow::Result<()> {
         println!();
         println!("Note: each year's net base deducts prior unpaid zakat as a dayn");
         println!("(debt), per the majority classical fiqh position (Hanafi/Shafi'i/");
-        println!("Hanbali). This is consistent with SS-35 §6/2/1 (debts reduce the");
-        println!("Zakah base) and §10/5 (Zakah does not cease by prescription), but");
-        println!("AAOIFI does not address this specific scenario for individual");
-        println!("depositors. Consult a qualified Islamic scholar before settling.");
+        println!("Hanbali). Consistent with SS-35 §6/2/1 and §10/5, but AAOIFI does");
+        println!("not address this scenario for individual depositors explicitly.");
+        println!("Consult a qualified Islamic scholar before settling.");
         println!();
         println!("This report assumes NO prior zakat was paid. Deduct any years");
         println!("already discharged before treating the total as outstanding.");
