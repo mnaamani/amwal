@@ -77,9 +77,6 @@ fn validate_transfer_request<L: LedgerClient>(
         return Err(TransferError::AccountsNotSameNature);
     }
 
-    // Other validation checks..(limits, account restrictions, fraud,
-    // security checks (recently added beneficiery, recently changed account password)
-    // compliance, unusual activity detection..
     Ok(())
 }
 
@@ -87,8 +84,6 @@ fn ensure_available_funds<L: LedgerClient>(
     ledger: &L,
     request: &TransferRequest,
 ) -> Result<(), TransferError> {
-    // If we are retrying the initiate transfer we may have already blocked funds and perhaps available balance
-    // no longer sufficient. So we must check if there are funds blocked related to the client_id
     let available = ledger
         .get_available_balance(request.from_account_id)
         .map_err(TransferError::Ledger)?;
