@@ -263,7 +263,7 @@ mod tests {
         let history = [
             snap(ago(HAWL_SECS * 3), BALANCE),
             snap(ago(HAWL_SECS * 2 + 1), NISAB - 1), // breaks hawl-1 accrual
-            snap(ago(HAWL_SECS + 1), BALANCE),        // new chain starts, completes
+            snap(ago(HAWL_SECS + 1), BALANCE),       // new chain starts, completes
         ];
         let a = assess_account(&history, NISAB).expect("second chain should yield an accrual");
         assert_eq!(a.hawl_started_at, history[2].timestamp);
