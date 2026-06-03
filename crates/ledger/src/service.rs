@@ -404,6 +404,240 @@ impl From<LedgerError> for LedgerClientError {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::{
+        Account, AccountBlock, AccountId, Balance, JournalEntry, LedgerLine, NewLedgerLineInput,
+        Posting,
+    };
+    use crate::errors::LedgerError;
+    use crate::store::LedgerStore;
+    use std::collections::HashMap;
+    use std::num::NonZeroU64;
+    use std::time::SystemTime;
+
+    // ── MockStore ─────────────────────────────────────────────────────────────
+
+    struct MockStore {
+        // (id, account_type, active)
+        accounts: Vec<(AccountId, AccountType, bool)>,
+    }
+
+    impl MockStore {
+        fn new(accounts: Vec<(AccountId, AccountType, bool)>) -> Self {
+            Self { accounts }
+        }
+
+        fn build_account(id: AccountId, account_type: AccountType, active: bool) -> Account {
+            Account {
+                id,
+                client_id: format!("client-{id}"),
+                account_type,
+                active,
+                name: format!("Account {id}"),
+                created_at: SystemTime::UNIX_EPOCH,
+            }
+        }
+    }
+
+    impl LedgerStore for MockStore {
+        fn insert_account(
+            &self,
+            _client_id: &str,
+            _name: &str,
+            account_type: AccountType,
+        ) -> Result<Account, LedgerError> {
+            Ok(Self::build_account(1, account_type, false))
+        }
+
+        fn set_account_active(&self, _: AccountId) -> Result<Account, LedgerError> {
+            unimplemented!()
+        }
+
+        fn find_account(&self, id: AccountId) -> Result<Option<Account>, LedgerError> {
+            Ok(self
+                .accounts
+                .iter()
+                .find(|(aid, _, _)| *aid == id)
+                .map(|&(id, at, active)| Self::build_account(id, at, active)))
+        }
+
+        fn find_accounts_by_ids(&self, ids: &[AccountId]) -> Result<Vec<Account>, LedgerError> {
+            Ok(self
+                .accounts
+                .iter()
+                .filter(|(id, _, _)| ids.contains(id))
+                .map(|&(id, at, active)| Self::build_account(id, at, active))
+                .collect())
+        }
+
+        fn list_active_accounts(&self) -> Result<Vec<Account>, LedgerError> {
+            unimplemented!()
+        }
+
+        fn persist_journal_entry(
+            &self,
+            client_id: &str,
+            _legs: &[NewLedgerLineInput],
+            _deltas: HashMap<AccountId, i64>,
+        ) -> Result<JournalEntry, LedgerError> {
+            Ok(JournalEntry {
+                id: 1,
+                client_id: client_id.to_string(),
+                created_at: SystemTime::UNIX_EPOCH,
+                updated_at: None,
+            })
+        }
+
+        fn find_balance(&self, _: AccountId) -> Result<Balance, LedgerError> {
+            unimplemented!()
+        }
+
+        fn find_ledger_lines(&self, _: AccountId) -> Result<Vec<LedgerLine>, LedgerError> {
+            unimplemented!()
+        }
+
+        fn aggregate_balances_by_type(&self) -> Result<Vec<(AccountType, i64)>, LedgerError> {
+            unimplemented!()
+        }
+
+        fn sum_unreleased_blocks(&self, _: AccountId) -> Result<i64, LedgerError> {
+            unimplemented!()
+        }
+
+        fn apply_account_block(
+            &self,
+            _: &str,
+            _: AccountId,
+            _: i64,
+        ) -> Result<AccountBlock, LedgerError> {
+            unimplemented!()
+        }
+
+        fn release_account_block(&self, _: &str) -> Result<AccountBlock, LedgerError> {
+            unimplemented!()
+        }
+    }
+
+    fn svc(accounts: Vec<(AccountId, AccountType, bool)>) -> LedgerService<MockStore> {
+        LedgerService::new(MockStore::new(accounts))
+    }
+
+    fn nz(n: u64) -> NonZeroU64 {
+        NonZeroU64::new(n).unwrap()
+    }
+
+    // ── create_account ────────────────────────────────────────────────────────
+
+    #[test]
+    fn create_account_rejects_empty_name() {
+        let result = svc(vec![]).create_account("c1", "", AccountType::Asset);
+        assert!(matches!(result, Err(LedgerError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn create_account_rejects_whitespace_name() {
+        let result = svc(vec![]).create_account("c1", "   ", AccountType::Asset);
+        assert!(matches!(result, Err(LedgerError::InvalidInput(_))));
+    }
+
+    // ── post_journal_entry ────────────────────────────────────────────────────
+
+    #[test]
+    fn post_journal_entry_requires_two_legs() {
+        let result = svc(vec![]).post_journal_entry(
+            "je-1",
+            vec![NewLedgerLineInput {
+                account_id: 1,
+                posting: Posting::Debit(nz(100)),
+            }],
+        );
+        assert!(matches!(result, Err(LedgerError::InvalidJournalEntry(_))));
+    }
+
+    #[test]
+    fn post_journal_entry_rejects_imbalanced() {
+        let result = svc(vec![]).post_journal_entry(
+            "je-1",
+            vec![
+                NewLedgerLineInput {
+                    account_id: 1,
+                    posting: Posting::Debit(nz(100)),
+                },
+                NewLedgerLineInput {
+                    account_id: 2,
+                    posting: Posting::Credit(nz(200)),
+                },
+            ],
+        );
+        assert!(matches!(result, Err(LedgerError::ImbalancedEntry { .. })));
+    }
+
+    #[test]
+    fn post_journal_entry_rejects_inactive_account() {
+        let result = svc(vec![
+            (1, AccountType::Asset, true),
+            (2, AccountType::Asset, false),
+        ])
+        .post_journal_entry(
+            "je-1",
+            vec![
+                NewLedgerLineInput {
+                    account_id: 1,
+                    posting: Posting::Debit(nz(100)),
+                },
+                NewLedgerLineInput {
+                    account_id: 2,
+                    posting: Posting::Credit(nz(100)),
+                },
+            ],
+        );
+        assert!(matches!(result, Err(LedgerError::AccountNotActive(2))));
+    }
+
+    #[test]
+    fn post_journal_entry_missing_account_returns_error() {
+        // Account 2 is not in the store.
+        let result = svc(vec![(1, AccountType::Asset, true)]).post_journal_entry(
+            "je-1",
+            vec![
+                NewLedgerLineInput {
+                    account_id: 1,
+                    posting: Posting::Debit(nz(100)),
+                },
+                NewLedgerLineInput {
+                    account_id: 2,
+                    posting: Posting::Credit(nz(100)),
+                },
+            ],
+        );
+        assert!(matches!(result, Err(LedgerError::Storage(_))));
+    }
+
+    #[test]
+    fn post_journal_entry_balanced_active_accounts_succeeds() {
+        let result = svc(vec![
+            (1, AccountType::Asset, true),
+            (2, AccountType::Liability, true),
+        ])
+        .post_journal_entry(
+            "je-1",
+            vec![
+                NewLedgerLineInput {
+                    account_id: 1,
+                    posting: Posting::Debit(nz(500)),
+                },
+                NewLedgerLineInput {
+                    account_id: 2,
+                    posting: Posting::Credit(nz(500)),
+                },
+            ],
+        );
+        assert!(result.is_ok());
+    }
+}
+
 /// Returns the (from_posting, to_posting) pair that decreases the sender's
 /// balance and increases the receiver's, given the sender's account type.
 fn transfer_postings(account_type: AccountType, amount: NonZeroU64) -> (Posting, Posting) {

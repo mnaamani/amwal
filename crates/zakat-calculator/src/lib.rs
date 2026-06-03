@@ -183,3 +183,143 @@ pub fn assess_account(history: &[BalanceSnapshot], nisab_fils: i64) -> Option<Za
 pub fn assess_all_periods(history: &[BalanceSnapshot], nisab_fils: i64) -> Vec<ZakatAssessment> {
     collect_accruals(history, nisab_fils, true)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    // Nisab: ~85 g gold ≈ 1,200,000 fils (arbitrary round number for tests)
+    const NISAB: i64 = 1_200_000;
+    // A balance comfortably above nisab, divisible by 40 to avoid rounding noise.
+    const BALANCE: i64 = 4_000_000;
+    // One hawl in seconds.
+    const HAWL_SECS: u64 = 354 * 24 * 3600;
+
+    fn ago(secs: u64) -> SystemTime {
+        SystemTime::now() - Duration::from_secs(secs)
+    }
+
+    fn snap(timestamp: SystemTime, balance: i64) -> BalanceSnapshot {
+        BalanceSnapshot { timestamp, balance }
+    }
+
+    // ── assess_account ────────────────────────────────────────────────────────
+
+    #[test]
+    fn no_history_returns_none() {
+        assert!(assess_account(&[], NISAB).is_none());
+    }
+
+    #[test]
+    fn below_nisab_returns_none() {
+        let history = [snap(ago(HAWL_SECS + 1), NISAB - 1)];
+        assert!(assess_account(&history, NISAB).is_none());
+    }
+
+    #[test]
+    fn hawl_incomplete_returns_none() {
+        // Balance above nisab but the hawl period has not elapsed yet.
+        let history = [snap(ago(HAWL_SECS - 3600), BALANCE)];
+        assert!(assess_account(&history, NISAB).is_none());
+    }
+
+    #[test]
+    fn one_complete_hawl() {
+        let history = [snap(ago(HAWL_SECS + 1), BALANCE)];
+        let a = assess_account(&history, NISAB).expect("one hawl should yield an accrual");
+        assert_eq!(a.balance, BALANCE);
+        assert_eq!(a.zakat_due, BALANCE / 40);
+        assert_eq!(a.nisab, NISAB);
+        assert_eq!(a.prior_zakat_deducted, 0);
+    }
+
+    #[test]
+    fn assess_account_returns_most_recent_accrual() {
+        // Two complete hawls from a single constant-balance snapshot.
+        // ago(HAWL_SECS*2 + 1) → n=1 end at ago(HAWL_SECS+1), n=2 end at ago(1).
+        let history = [snap(ago(HAWL_SECS * 2 + 1), BALANCE)];
+        let a = assess_account(&history, NISAB).expect("two hawls should yield accruals");
+        let expected_end = history[0].timestamp + HAWL_DURATION * 2;
+        assert_eq!(a.hawl_completed_at, expected_end);
+    }
+
+    #[test]
+    fn balance_at_accrual_below_nisab_returns_none() {
+        // Balance starts above nisab but drops below before the hawl_end date.
+        // hawl_start = ago(HAWL_SECS + 7200) → hawl_end = ago(7200).
+        // The drop at ago(9000) is the last snapshot ≤ hawl_end, so accrual fails.
+        let history = [
+            snap(ago(HAWL_SECS + 7200), BALANCE),
+            snap(ago(9000), NISAB - 1),
+        ];
+        assert!(assess_account(&history, NISAB).is_none());
+    }
+
+    #[test]
+    fn chain_break_then_new_chain() {
+        // First hawl breaks (balance drops below nisab at accrual date).
+        // A new chain starts and completes.
+        let history = [
+            snap(ago(HAWL_SECS * 3), BALANCE),
+            snap(ago(HAWL_SECS * 2 + 1), NISAB - 1), // breaks hawl-1 accrual
+            snap(ago(HAWL_SECS + 1), BALANCE),        // new chain starts, completes
+        ];
+        let a = assess_account(&history, NISAB).expect("second chain should yield an accrual");
+        assert_eq!(a.hawl_started_at, history[2].timestamp);
+        assert_eq!(a.balance, BALANCE);
+    }
+
+    // ── assess_all_periods ────────────────────────────────────────────────────
+
+    #[test]
+    fn all_periods_empty_returns_empty() {
+        assert!(assess_all_periods(&[], NISAB).is_empty());
+    }
+
+    #[test]
+    fn all_periods_incomplete_hawl_returns_empty() {
+        let history = [snap(ago(HAWL_SECS - 3600), BALANCE)];
+        assert!(assess_all_periods(&history, NISAB).is_empty());
+    }
+
+    #[test]
+    fn all_periods_single_hawl() {
+        let history = [snap(ago(HAWL_SECS + 1), BALANCE)];
+        let periods = assess_all_periods(&history, NISAB);
+        assert_eq!(periods.len(), 1);
+        assert_eq!(periods[0].zakat_due, BALANCE / 40);
+        assert_eq!(periods[0].prior_zakat_deducted, 0);
+    }
+
+    #[test]
+    fn all_periods_second_year_deducts_first_zakat() {
+        // Two complete hawls with a constant balance.
+        // Period 2's zakatable base = BALANCE minus period 1's zakat_due (the dayn).
+        let history = [snap(ago(HAWL_SECS * 2 + 1), BALANCE)];
+        let periods = assess_all_periods(&history, NISAB);
+        assert_eq!(periods.len(), 2);
+
+        let first_zakat = BALANCE / 40;
+        assert_eq!(periods[0].prior_zakat_deducted, 0);
+        assert_eq!(periods[0].zakat_due, first_zakat);
+
+        let expected_net = BALANCE - first_zakat;
+        assert_eq!(periods[1].prior_zakat_deducted, first_zakat);
+        assert_eq!(periods[1].balance, expected_net);
+        assert_eq!(periods[1].zakat_due, expected_net / 40);
+    }
+
+    #[test]
+    fn assess_account_and_all_periods_agree_on_first_period() {
+        // For a single completed hawl, both functions must return identical values
+        // (prior debt is zero so deduct_debt has no effect).
+        let history = [snap(ago(HAWL_SECS + 1), BALANCE)];
+        let single = assess_account(&history, NISAB).unwrap();
+        let all = assess_all_periods(&history, NISAB);
+        assert_eq!(all.len(), 1);
+        assert_eq!(single.balance, all[0].balance);
+        assert_eq!(single.zakat_due, all[0].zakat_due);
+        assert_eq!(single.prior_zakat_deducted, all[0].prior_zakat_deducted);
+    }
+}
