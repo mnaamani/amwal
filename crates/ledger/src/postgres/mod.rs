@@ -123,7 +123,7 @@ impl LedgerStore for PostgresLedgerStore {
         accounts::find_accounts_by_ids(&mut conn, ids)
     }
 
-    fn list_active_accounts(&self) -> Result<Vec<AccountId>, LedgerError> {
+    fn list_active_accounts(&self) -> Result<Vec<Account>, LedgerError> {
         let mut conn = self.conn()?;
         accounts::list_active_accounts(&mut conn)
     }

@@ -77,12 +77,12 @@ pub(super) fn find_accounts_by_ids(
         .map_err(storage_err)
 }
 
-pub(super) fn list_active_accounts(conn: &mut PgConnection) -> Result<Vec<AccountId>, LedgerError> {
+pub(super) fn list_active_accounts(conn: &mut PgConnection) -> Result<Vec<Account>, LedgerError> {
     accts::accounts
         .filter(accts::active.eq(true))
         .select(models::Account::as_select())
         .load(conn)
-        .map(|v| v.into_iter().map(|v| v.id).collect())
+        .map(|v| v.into_iter().map(Into::into).collect())
         .map_err(storage_err)
 }
 

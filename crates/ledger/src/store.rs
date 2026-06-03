@@ -21,7 +21,7 @@ pub trait LedgerStore: Send + Sync {
     fn set_account_active(&self, id: AccountId) -> Result<Account, LedgerError>;
     fn find_account(&self, id: AccountId) -> Result<Option<Account>, LedgerError>;
     fn find_accounts_by_ids(&self, ids: &[AccountId]) -> Result<Vec<Account>, LedgerError>;
-    fn list_active_accounts(&self) -> Result<Vec<AccountId>, LedgerError>;
+    fn list_active_accounts(&self) -> Result<Vec<Account>, LedgerError>;
 
     // -- Journal --
     /// Atomically insert the journal entry, its lines, and apply pre-computed

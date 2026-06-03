@@ -8,8 +8,8 @@ use ledger_api::{
 };
 
 use crate::domain::{
-    Account, AccountId, AccountType, Balance, JournalEntry, LedgerLine, NewLedgerLineInput,
-    Posting, TrialBalanceReport,
+    Account, AccountId, AccountType, Balance, JournalEntry, NewLedgerLineInput, Posting,
+    TrialBalanceReport,
 };
 use crate::errors::LedgerError;
 use crate::postgres::PostgresLedgerStore;
@@ -55,10 +55,6 @@ impl<S: LedgerStore> LedgerService<S> {
 
     pub fn get_account(&self, id: AccountId) -> Result<Option<Account>, LedgerError> {
         self.store.find_account(id)
-    }
-
-    pub fn get_active_accounts(&self) -> Result<Vec<AccountId>, LedgerError> {
-        self.store.list_active_accounts()
     }
 
     pub fn post_journal_entry(
@@ -203,10 +199,6 @@ impl<S: LedgerStore> LedgerService<S> {
         Ok(balance - blocked)
     }
 
-    pub fn get_account_lines(&self, account_id: AccountId) -> Result<Vec<LedgerLine>, LedgerError> {
-        self.store.find_ledger_lines(account_id)
-    }
-
     pub fn trial_balance(&self) -> Result<TrialBalanceReport, LedgerError> {
         let rows = self.store.aggregate_balances_by_type()?;
         let mut report = TrialBalanceReport {
@@ -267,12 +259,10 @@ impl<S: LedgerStore> LedgerClient for LedgerService<S> {
     }
 
     fn list_active_accounts(&self) -> Result<Vec<AccountSummary>, LedgerClientError> {
-        let ids = self.store.list_active_accounts().map_err(to_client_err)?;
-        let accounts = self
-            .store
-            .find_accounts_by_ids(&ids)
-            .map_err(to_client_err)?;
-        Ok(accounts.into_iter().map(account_to_summary).collect())
+        self.store
+            .list_active_accounts()
+            .map(|v| v.into_iter().map(account_to_summary).collect())
+            .map_err(to_client_err)
     }
 
     fn get_account_balance(&self, id: ApiAccountId) -> Result<i64, LedgerClientError> {
