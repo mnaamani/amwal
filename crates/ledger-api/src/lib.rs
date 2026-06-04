@@ -21,7 +21,8 @@ pub type JournalEntryId = i32;
 /// This distinction drives balance-delta computation in the service layer and
 /// determines which posting directions are valid for a direct transfer between
 /// two accounts (see [`accounts_compatible`]).
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum AccountType {
     /// Debit-normal. Represents something the institution owns or is owed.
     Asset,
@@ -54,7 +55,8 @@ impl FromStr for AccountType {
 }
 
 /// A read-only summary of an account returned by query operations.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AccountSummary {
     pub id: AccountId,
     /// Whether the account has been activated and can receive journal postings.
@@ -68,14 +70,21 @@ pub struct AccountSummary {
 /// This is the API-layer equivalent of the domain's `Posting` type.
 /// Amounts are in the smallest currency unit (e.g. fils for AED) and must
 /// be non-zero — use [`NonZeroU64`] to enforce this at construction time.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "direction", content = "amount")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum JournalPosting {
-    Debit(NonZeroU64),
-    Credit(NonZeroU64),
+    Debit(#[cfg_attr(feature = "openapi", schema(value_type = u64))] NonZeroU64),
+    Credit(#[cfg_attr(feature = "openapi", schema(value_type = u64))] NonZeroU64),
 }
 
 /// The account balance after a specific journal entry was posted.
 /// Used to reconstruct balance history for zakat or audit purposes.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BalanceSnapshot {
+    #[serde(with = "system_time_serde")]
+    #[cfg_attr(feature = "openapi", schema(value_type = u64, example = 1700000000000u64))]
     pub timestamp: SystemTime,
     /// Running balance in the smallest currency unit (e.g. fils for AED).
     pub balance: i64,
@@ -85,13 +94,17 @@ pub struct BalanceSnapshot {
 ///
 /// A well-formed entry requires at least two legs whose debits and credits
 /// balance. The `account_id` must refer to an active account.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct JournalLeg {
     pub account_id: AccountId,
     pub posting: JournalPosting,
 }
 
 /// Errors returned by [`LedgerClient`] operations.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "error", content = "detail")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum LedgerClientError {
     /// No account exists with the given [`AccountId`].
     AccountNotFound(AccountId),
@@ -224,4 +237,27 @@ pub trait LedgerClient: Send + Sync {
         to_account_id: AccountId,
         amount: i64,
     ) -> Result<(), LedgerClientError>;
+}
+
+// ── SystemTime serde helper ───────────────────────────────────────────────────
+
+/// Serialises `SystemTime` as milliseconds since the Unix epoch (u64).
+/// Avoids any external dependency while producing a compact, JSON-safe value.
+mod system_time_serde {
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(t: &SystemTime, s: S) -> Result<S::Ok, S::Error> {
+        let ms = t
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO)
+            .as_millis() as u64;
+        s.serialize_u64(ms)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<SystemTime, D::Error> {
+        let ms = <u64 as serde::Deserialize>::deserialize(d)?;
+        Ok(UNIX_EPOCH + Duration::from_millis(ms))
+    }
 }

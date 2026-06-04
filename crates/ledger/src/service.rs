@@ -27,6 +27,14 @@ pub struct LedgerService<S: LedgerStore> {
     store: S,
 }
 
+impl<S: LedgerStore + Clone> Clone for LedgerService<S> {
+    fn clone(&self) -> Self {
+        Self {
+            store: self.store.clone(),
+        }
+    }
+}
+
 impl<S: LedgerStore> LedgerService<S> {
     pub fn new(store: S) -> Self {
         Self { store }

@@ -1,7 +1,19 @@
 [package]
 name = "ledger-api"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 license = "Apache-2.0"
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[dependencies.serde_json]
+version = "1"
+optional = true
+
+[dependencies.utoipa]
+version = "4"
+optional = true
+
+[features]
+openapi = ["dep:utoipa", "dep:serde_json"]
