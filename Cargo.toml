@@ -7,7 +7,7 @@ members = [
     "crates/event-consumer-demo",
     "crates/zakat-calculator",
     "crates/zakat-report",
-    "crates/amwal-ledger-server",
-    "crates/amwal-ledger-client",
+    "crates/ledger-http-server",
+    "crates/ledger-http-client",
 ]
 resolver = "2"

@@ -29,7 +29,7 @@ async fn main() -> std::io::Result<()> {
     let data = web::Data::from(ledger);
 
     let bind_addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
-    println!("Starting amwal-ledger-server on {bind_addr}");
+    println!("Starting ledger-http-server on {bind_addr}");
 
     HttpServer::new(move || {
         let openapi = ApiDoc::openapi();

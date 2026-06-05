@@ -1,11 +1,11 @@
 [package]
-name = "amwal-ledger-server"
+name = "ledger-http-server"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
 
 [[bin]]
-name = "amwal-ledger-server"
+name = "ledger-http-server"
 path = "src/main.rs"
 
 [dependencies]

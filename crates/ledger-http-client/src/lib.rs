@@ -4,13 +4,13 @@ use ledger_api::{
 };
 
 /// Synchronous HTTP client that implements [`LedgerClient`] by calling the
-/// `amwal-ledger-server` REST API.
+/// `ledger-http-server` REST API.
 ///
 /// Drop-in replacement for `LedgerService` in any code that depends only on
 /// the `LedgerClient` trait.
 ///
 /// ```no_run
-/// use amwal_ledger_client::LedgerHttpClient;
+/// use ledger_http_client::LedgerHttpClient;
 /// use ledger_api::LedgerClient;
 ///
 /// let client = LedgerHttpClient::new("http://localhost:8080");

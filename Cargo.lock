@@ -216,32 +216,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "amwal-ledger-client"
-version = "0.1.0"
-dependencies = [
- "ledger-api",
- "serde",
- "serde_json",
- "ureq",
-]
-
-[[package]]
-name = "amwal-ledger-server"
-version = "0.1.0"
-dependencies = [
- "actix-web",
- "domain-events",
- "dotenvy",
- "ledger",
- "ledger-api",
- "serde",
- "serde_json",
- "tokio",
- "utoipa",
- "utoipa-swagger-ui",
-]
-
-[[package]]
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1249,6 +1223,32 @@ dependencies = [
  "serde",
  "serde_json",
  "utoipa",
+]
+
+[[package]]
+name = "ledger-http-client"
+version = "0.1.0"
+dependencies = [
+ "ledger-api",
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
+name = "ledger-http-server"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "domain-events",
+ "dotenvy",
+ "ledger",
+ "ledger-api",
+ "serde",
+ "serde_json",
+ "tokio",
+ "utoipa",
+ "utoipa-swagger-ui",
 ]
 
 [[package]]
