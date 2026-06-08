@@ -2,7 +2,7 @@ use std::num::NonZeroU64;
 use std::str::FromStr;
 use std::time::SystemTime;
 
-/// Opaque account identifier — mirrors ledger's internal AccountId.
+/// Opaque account identifier.
 pub type AccountId = i64;
 /// Opaque journal entry identifier returned after a successful posting.
 pub type JournalEntryId = i64;
@@ -167,8 +167,7 @@ pub trait LedgerClient: Send + Sync {
         account_type: AccountType,
     ) -> Result<AccountSummary, LedgerClientError>;
 
-    /// Activate an account and seed its balance row. Must be called before
-    /// the account can appear in journal entries.
+    /// Activate an account so it can receive journal postings.
     fn activate_account(&self, id: AccountId) -> Result<AccountSummary, LedgerClientError>;
 
     /// Fetch a single account by ID. Returns `None` if no such account exists.

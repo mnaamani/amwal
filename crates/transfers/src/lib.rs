@@ -19,9 +19,9 @@ pub type TransferInternalId = i64;
 ///        ▼
 ///     Pending ──── complete_transfer ──▶ Completing ──▶ Completed
 ///        │
-///        └────────── cancel_transfer ──▶ Cancelling ──▶ Cancelled
-///
-///  Any state ──── block_funds failure ──▶ Failed
+///        ├────────── cancel_transfer ──▶ Cancelling ──▶ Cancelled
+///        │
+///        └────────── block_funds failure ──▶ Failed
 /// ```
 ///
 /// The intermediate states (`Completing`, `Cancelling`) capture intent
@@ -237,7 +237,7 @@ pub fn complete_transfer<L: LedgerClient>(
 ///
 /// Intent is captured atomically before the ledger write: the transfer is moved
 /// to `Cancelling` first, so a concurrent `complete_transfer` sees a conflict
-/// and returns `TransferBeingCompleted` rather than racing ahead. Safe to retry.
+/// and returns `TransferBeingCancelled` rather than racing ahead. Safe to retry.
 pub fn cancel_transfer<L: LedgerClient>(
     ledger: &L,
     store: &TransferStore,
