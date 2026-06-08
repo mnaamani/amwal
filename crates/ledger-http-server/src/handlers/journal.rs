@@ -21,7 +21,7 @@ fn internal_err() -> LedgerApiError {
     path = "/journal/entries",
     request_body = PostJournalEntryRequest,
     responses(
-        (status = 200, description = "Journal entry ID", body = i32),
+        (status = 200, description = "Journal entry ID", body = i64),
         (status = 400, description = "Invalid request", body = ledger_api::LedgerClientError),
         (status = 422, description = "Validation error", body = ledger_api::LedgerClientError),
         (status = 503, description = "Storage unavailable", body = ledger_api::LedgerClientError),

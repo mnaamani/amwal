@@ -12,12 +12,11 @@ use serde::{Deserialize, Serialize};
 pub enum DomainEvent {
     /// Emitted after any journal entry that changes an account's posted balance.
     BalanceChanged {
-        /// Ledger account ID (i32, mirrors `ledger_api::AccountId`).
-        account_id: i32,
-        new_balance: i64,
+        account_id: ledger_api::AccountId,
+        new_balance: ledger_api::Amount,
         /// The journal entry that caused this change. Used by consumers as a
         /// high-water mark to skip already-processed events on replay.
-        journal_entry_id: i32,
+        journal_entry_id: ledger_api::JournalEntryId,
     },
 }
 

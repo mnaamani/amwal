@@ -1,21 +1,17 @@
 use std::{num::NonZeroU64, time::SystemTime};
 
-/// Internal account identifier. Opaque to callers — do not interpret the value.
-pub type AccountId = i32;
-/// Internal journal entry identifier returned after a successful posting.
-pub type JournalEntryId = i32;
-/// Internal ledger line identifier (one line per leg of a journal entry).
-pub type LedgerLineId = i32;
-/// Internal fund block identifier.
-pub type AccountBlockId = i32;
+pub use ledger_api::{AccountId, AccountType, Amount, JournalEntryId};
 
-pub use ledger_api::AccountType;
+/// Internal ledger line identifier (one line per leg of a journal entry).
+pub type LedgerLineId = i64;
+/// Internal fund block identifier.
+pub type AccountBlockId = i64;
 
 /// A ledger account record as stored internally.
 ///
 /// Newly created accounts are inactive (`active: false`) and cannot receive
-/// journal postings until explicitly activated. Activation also seeds the
-/// balance row.
+/// journal postings until explicitly activated. Balance columns are maintained
+/// atomically alongside every journal posting — no separate balances table.
 #[derive(Debug)]
 pub struct Account {
     pub id: AccountId,
@@ -24,11 +20,34 @@ pub struct Account {
     pub account_type: AccountType,
     pub active: bool,
     pub name: String,
+    /// Cumulative sum of all debit postings to this account.
+    pub debits_posted: i64,
+    /// Cumulative sum of all credit postings to this account.
+    pub credits_posted: i64,
+    /// Total amount currently held in unreleased fund blocks.
+    pub amount_pending: i64,
     pub created_at: SystemTime,
 }
 
-/// A committed journal entry header. The actual debits and credits live in
-/// the associated [`LedgerLine`] rows.
+impl Account {
+    /// Signed balance in the account's normal direction.
+    /// Positive means the account is in its expected state (e.g. an asset with
+    /// value, a liability owed to depositors).
+    pub fn posted_balance(&self) -> i64 {
+        match self.account_type {
+            AccountType::Asset | AccountType::Expense => self.debits_posted - self.credits_posted,
+            _ => self.credits_posted - self.debits_posted,
+        }
+    }
+
+    /// Funds available to spend right now: posted balance minus pending blocks.
+    pub fn available_balance(&self) -> i64 {
+        self.posted_balance() - self.amount_pending
+    }
+}
+
+/// A committed journal entry header. The actual postings live in the associated
+/// [`LedgerLine`] rows. Immutable once committed.
 #[derive(Debug)]
 pub struct JournalEntry {
     pub id: JournalEntryId,
@@ -36,7 +55,13 @@ pub struct JournalEntry {
     /// `client_id` return this entry rather than posting again.
     pub client_id: String,
     pub created_at: SystemTime,
-    pub updated_at: Option<SystemTime>,
+}
+
+/// The direction of a single posting in a journal entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PostingDirection {
+    Debit,
+    Credit,
 }
 
 /// A single debit or credit posting to an account within a journal entry.
@@ -50,7 +75,7 @@ pub enum Posting {
 }
 
 impl Posting {
-    /// Returns the debit amount in fils, or 0 if this is a Credit posting.
+    /// Returns the debit amount in minor units, or 0 if this is a Credit posting.
     pub fn debit(&self) -> i64 {
         match self {
             Self::Debit(v) => v.get() as i64,
@@ -58,7 +83,7 @@ impl Posting {
         }
     }
 
-    /// Returns the credit amount in fils, or 0 if this is a Debit posting.
+    /// Returns the credit amount in minor units, or 0 if this is a Debit posting.
     pub fn credit(&self) -> i64 {
         match self {
             Self::Credit(v) => v.get() as i64,
@@ -72,43 +97,35 @@ impl Posting {
             Self::Debit(v) | Self::Credit(v) => *v,
         }
     }
+
+    pub fn direction(&self) -> PostingDirection {
+        match self {
+            Self::Debit(_) => PostingDirection::Debit,
+            Self::Credit(_) => PostingDirection::Credit,
+        }
+    }
 }
 
-/// One committed leg of a journal entry as stored in the ledger.
-///
-/// Exactly one of `debit` or `credit` is non-zero for any given row
-/// (split columns rather than a signed amount, for clarity in SQL).
+/// One committed leg of a journal entry as stored in the ledger. Immutable.
 #[derive(Debug)]
 pub struct LedgerLine {
     pub id: LedgerLineId,
     pub journal_entry_id: JournalEntryId,
     pub account: AccountId,
-    /// Non-zero when this leg is a Debit; zero otherwise.
-    pub debit: i64,
-    /// Non-zero when this leg is a Credit; zero otherwise.
-    pub credit: i64,
+    pub amount: i64,
+    pub direction: PostingDirection,
     pub created_at: SystemTime,
 }
 
 impl LedgerLine {
-    /// Reconstruct the typed [`Posting`] from the split debit/credit columns.
+    /// Reconstruct the typed [`Posting`] from the stored amount and direction.
     pub fn posting(&self) -> Posting {
-        if self.debit > 0 {
-            Posting::Debit(NonZeroU64::new(self.debit as u64).expect("debit checked > 0"))
-        } else {
-            Posting::Credit(NonZeroU64::new(self.credit as u64).expect("credit checked > 0"))
+        let amount = NonZeroU64::new(self.amount as u64).expect("ledger line amount > 0");
+        match self.direction {
+            PostingDirection::Debit => Posting::Debit(amount),
+            PostingDirection::Credit => Posting::Credit(amount),
         }
     }
-}
-
-/// The current posted balance for an account, maintained as a running total
-/// and updated atomically with each journal entry.
-#[derive(Debug)]
-pub struct Balance {
-    pub account_id: AccountId,
-    /// Posted balance in fils. Does not subtract unreleased fund blocks.
-    pub balance: i64,
-    pub updated_at: SystemTime,
 }
 
 /// Input for one line of a journal entry.
@@ -125,7 +142,7 @@ pub struct AccountBlock {
     pub id: AccountBlockId,
     pub client_id: String,
     pub account_id: AccountId,
-    /// Amount reserved, in fils.
+    /// Amount reserved, in minor units.
     pub amount: i64,
     /// True once the block has been released (either by completion or cancellation).
     pub released: bool,

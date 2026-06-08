@@ -48,7 +48,7 @@ impl EventConsumer {
             // In-memory idempotency cursor: account_id → last processed journal_entry_id.
             // A production consumer persists this to its own DB table so restarts
             // don't reprocess events that were already handled.
-            let mut cursor: HashMap<i32, i32> = HashMap::new();
+            let mut cursor: HashMap<i64, i64> = HashMap::new();
 
             for event in &self.receiver {
                 match event {

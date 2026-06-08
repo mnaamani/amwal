@@ -1,28 +1,23 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use diesel::prelude::*;
 
 use super::models;
-use super::schema::{accounts, balances, journal_entries, ledger_lines, outbox};
+use super::schema::{accounts, journal_entries, ledger_lines, outbox};
 use crate::domain::{
-    AccountId, AccountType, Balance, JournalEntry, LedgerLine, NewLedgerLineInput,
+    AccountId, AccountType, JournalEntry, LedgerLine, NewLedgerLineInput, Posting,
 };
 use crate::errors::LedgerError;
 
-/// Atomically insert a journal entry, its ledger lines, and apply the
-/// pre-computed balance deltas. All validation and delta computation happens
-/// in the service layer before this is called.
+/// Atomically insert a journal entry, its ledger lines, and update the
+/// per-account debit/credit posted counters on the accounts table.
 ///
 /// Idempotent on `client_id`: if a journal entry with the same `client_id`
 /// already exists the existing row is returned and no further writes are made.
-/// Because all writes happen inside a single transaction, the presence of the
-/// journal entry row guarantees the lines and balance deltas were also
-/// committed — so returning early on a duplicate is always safe.
 pub(super) fn persist_journal_entry(
     conn: &mut PgConnection,
     client_id: &str,
     legs: &[NewLedgerLineInput],
-    balance_deltas: HashMap<AccountId, i64>,
 ) -> Result<JournalEntry, LedgerError> {
     conn.transaction::<JournalEntry, LedgerError, _>(|conn| {
         let insert_result = diesel::insert_into(journal_entries::table)
@@ -51,8 +46,8 @@ pub(super) fn persist_journal_entry(
             .map(|leg| models::NewLedgerLine {
                 journal_entry_id: entry.id,
                 account: leg.account_id,
-                debit: leg.posting.debit(),
-                credit: leg.posting.credit(),
+                amount: leg.posting.amount().get() as i64,
+                direction: leg.posting.direction().into(),
             })
             .collect();
 
@@ -60,27 +55,37 @@ pub(super) fn persist_journal_entry(
             .values(&new_lines)
             .execute(conn)?;
 
-        let now = std::time::SystemTime::now();
-        for (account_id, delta) in &balance_deltas {
-            diesel::update(balances::table.find(*account_id))
-                .set((
-                    balances::balance.eq(balances::balance + delta),
-                    balances::updated_at.eq(now),
-                ))
-                .execute(conn)?;
+        for leg in legs {
+            match &leg.posting {
+                Posting::Debit(v) => {
+                    diesel::update(accounts::table.find(leg.account_id))
+                        .set(accounts::debits_posted.eq(accounts::debits_posted + v.get() as i64))
+                        .execute(conn)?;
+                }
+                Posting::Credit(v) => {
+                    diesel::update(accounts::table.find(leg.account_id))
+                        .set(accounts::credits_posted.eq(accounts::credits_posted + v.get() as i64))
+                        .execute(conn)?;
+                }
+            }
         }
 
-        // Insert one outbox event per affected account. Reading back the new
-        // balance in the same transaction guarantees the outbox row is consistent
-        // with the balance update that triggered it.
-        for account_id in balance_deltas.keys() {
-            let new_balance: i64 = balances::table
-                .find(*account_id)
-                .select(balances::balance)
-                .first(conn)?;
+        let distinct_ids: Vec<AccountId> = legs
+            .iter()
+            .map(|l| l.account_id)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
 
+        let affected: Vec<models::Account> = accounts::table
+            .filter(accounts::id.eq_any(&distinct_ids))
+            .select(models::Account::as_select())
+            .load(conn)?;
+
+        for acct in &affected {
+            let new_balance = acct.posted_balance();
             let event = domain_events::DomainEvent::BalanceChanged {
-                account_id: *account_id,
+                account_id: acct.id,
                 new_balance,
                 journal_entry_id: entry.id,
             };
@@ -99,18 +104,6 @@ pub(super) fn persist_journal_entry(
     })
 }
 
-pub(super) fn find_balance(
-    conn: &mut PgConnection,
-    account_id: AccountId,
-) -> Result<Balance, LedgerError> {
-    balances::table
-        .find(account_id)
-        .select(models::Balance::as_select())
-        .first(conn)
-        .map(Into::into)
-        .map_err(LedgerError::from)
-}
-
 pub(super) fn find_ledger_lines(
     conn: &mut PgConnection,
     account_id: AccountId,
@@ -127,11 +120,25 @@ pub(super) fn find_ledger_lines(
 pub(super) fn aggregate_balances_by_type(
     conn: &mut PgConnection,
 ) -> Result<Vec<(AccountType, i64)>, LedgerError> {
-    let rows: Vec<(models::AccountType, i64)> = balances::table
-        .inner_join(accounts::table)
-        .select((accounts::account_type, balances::balance))
+    let rows: Vec<(models::AccountType, i64, i64)> = accounts::table
+        .filter(accounts::active.eq(true))
+        .select((
+            accounts::account_type,
+            accounts::debits_posted,
+            accounts::credits_posted,
+        ))
         .load(conn)
         .map_err(LedgerError::from)?;
 
-    Ok(rows.into_iter().map(|(t, b)| (t.into(), b)).collect())
+    Ok(rows
+        .into_iter()
+        .map(|(at, debits, credits)| {
+            let domain_at: AccountType = at.into();
+            let balance = match domain_at {
+                AccountType::Asset | AccountType::Expense => debits - credits,
+                _ => credits - debits,
+            };
+            (domain_at, balance)
+        })
+        .collect())
 }

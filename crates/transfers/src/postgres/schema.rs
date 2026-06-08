@@ -11,11 +11,11 @@ diesel::table! {
     use super::sql_types::TransferStatus;
 
     transfer_internal (id) {
-        id -> Int4,
-        #[max_length = 32]
+        id -> Int8,
+        #[max_length = 64]
         client_id -> Varchar,
-        from_account_id -> Int4,
-        to_account_id -> Int4,
+        from_account_id -> Int8,
+        to_account_id -> Int8,
         amount -> Int8,
         status -> TransferStatus,
         created_at -> Timestamp,

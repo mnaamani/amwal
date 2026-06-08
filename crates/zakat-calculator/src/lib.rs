@@ -11,7 +11,7 @@ pub const HAWL_DURATION: Duration = Duration::from_secs(354 * 24 * 3600);
 /// of these into [`assess_account`] or [`assess_all_periods`].
 pub struct BalanceSnapshot {
     pub timestamp: SystemTime,
-    /// Balance in the smallest currency unit (e.g. fils for AED).
+    /// Balance in the currency's minor unit.
     pub balance: i64,
 }
 
@@ -22,15 +22,15 @@ pub struct ZakatAssessment {
     /// The accrual date: `hawl_started_at + n × HAWL_DURATION`.
     /// Per SS-35 §5/2/6/2–3, assets are valued "on the day of Zakah accrual".
     pub hawl_completed_at: SystemTime,
-    /// Net zakatable balance in fils on the accrual date.
+    /// Net zakatable balance in minor units on the accrual date.
     ///
     /// For [`assess_account`] this equals the actual ledger balance.
     /// For [`assess_all_periods`] this is the ledger balance minus
     /// `prior_zakat_deducted`: the net base on which zakat is computed.
     pub balance: i64,
-    /// Nisab threshold used, in fils.
+    /// Nisab threshold used, in minor units.
     pub nisab: i64,
-    /// Amount due (2.5% = 1/40 of `balance`), in fils.
+    /// Amount due (2.5% = 1/40 of `balance`), in minor units.
     pub zakat_due: i64,
     /// Cumulative zakat from all earlier periods deducted before computing
     /// this period's obligation. Always zero in [`assess_account`] results.
@@ -51,7 +51,7 @@ pub struct ZakatAssessment {
 /// histories but worth noting if histories grow very large.
 fn collect_accruals(
     history: &[BalanceSnapshot],
-    nisab_fils: i64,
+    nisab: i64,
     deduct_debt: bool,
 ) -> Vec<ZakatAssessment> {
     let now = SystemTime::now();
@@ -65,7 +65,7 @@ fn collect_accruals(
         // reaches nisab — consistent with the net assets method (SS-35 §2/1/1).
         let rel = history[offset..]
             .iter()
-            .position(|s| s.balance.saturating_sub(accumulated_debt) >= nisab_fils);
+            .position(|s| s.balance.saturating_sub(accumulated_debt) >= nisab);
         let Some(rel) = rel else { break };
         let hawl_start = history[offset + rel].timestamp;
 
@@ -90,7 +90,7 @@ fn collect_accruals(
 
             let net_balance = actual_balance.saturating_sub(accumulated_debt);
 
-            if net_balance < nisab_fils {
+            if net_balance < nisab {
                 // Net wealth fell below nisab at this accrual date — chain breaks.
                 broke_at = Some(hawl_end);
                 break;
@@ -106,7 +106,7 @@ fn collect_accruals(
                 hawl_started_at: hawl_start,
                 hawl_completed_at: hawl_end,
                 balance: net_balance,
-                nisab: nisab_fils,
+                nisab,
                 zakat_due,
                 prior_zakat_deducted,
             });
@@ -140,10 +140,8 @@ fn collect_accruals(
 ///
 /// Returns `None` when no completed hawl with a nisab-meeting balance exists.
 /// `history` must be chronologically ordered (oldest first).
-pub fn assess_account(history: &[BalanceSnapshot], nisab_fils: i64) -> Option<ZakatAssessment> {
-    collect_accruals(history, nisab_fils, false)
-        .into_iter()
-        .last()
+pub fn assess_account(history: &[BalanceSnapshot], nisab: i64) -> Option<ZakatAssessment> {
+    collect_accruals(history, nisab, false).into_iter().last()
 }
 
 /// Return **every** accrual period in which zakat was due, oldest first,
@@ -151,7 +149,7 @@ pub fn assess_account(history: &[BalanceSnapshot], nisab_fils: i64) -> Option<Za
 ///
 /// Each period's zakatable base is the actual ledger balance on the accrual
 /// date minus the cumulative unpaid zakat from all earlier periods
-/// (`prior_zakat_deducted`). This prevents computing zakat on fils that
+/// (`prior_zakat_deducted`). This prevents computing zakat on minor units that
 /// Shari'ah already required to be disbursed.
 ///
 /// ## When to use
@@ -167,7 +165,7 @@ pub fn assess_account(history: &[BalanceSnapshot], nisab_fils: i64) -> Option<Za
 /// classical fiqh position (Hanafi, Shafi'i, Hanbali): unpaid zakat is a
 /// confirmed obligation on the wealth, and computing subsequent years' zakat
 /// on a gross balance that already includes money that should have been
-/// disbursed effectively taxes the same fils twice.
+/// disbursed effectively taxes the same minor units twice.
 ///
 /// This is consistent with AAOIFI SS-35 §2/1/1 (net assets method: zakatable
 /// assets minus qualifying liabilities) and §6/2/1 (debts arising from
@@ -180,8 +178,8 @@ pub fn assess_account(history: &[BalanceSnapshot], nisab_fils: i64) -> Option<Za
 /// their situation.
 ///
 /// `history` must be chronologically ordered (oldest first).
-pub fn assess_all_periods(history: &[BalanceSnapshot], nisab_fils: i64) -> Vec<ZakatAssessment> {
-    collect_accruals(history, nisab_fils, true)
+pub fn assess_all_periods(history: &[BalanceSnapshot], nisab: i64) -> Vec<ZakatAssessment> {
+    collect_accruals(history, nisab, true)
 }
 
 #[cfg(test)]
@@ -189,7 +187,7 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
-    // Nisab: ~85 g gold ≈ 1,200,000 fils (arbitrary round number for tests)
+    // Nisab: ~85 g gold ≈ 1,200,000 minor units (arbitrary round number for tests)
     const NISAB: i64 = 1_200_000;
     // A balance comfortably above nisab, divisible by 40 to avoid rounding noise.
     const BALANCE: i64 = 4_000_000;

@@ -11,9 +11,9 @@ fn internal_err() -> LedgerApiError {
 #[utoipa::path(
     get,
     path = "/accounts/{id}/balance",
-    params(("id" = i32, Path, description = "Account ID")),
+    params(("id" = i64, Path, description = "Account ID")),
     responses(
-        (status = 200, description = "Posted balance in fils", body = i64),
+        (status = 200, description = "Posted balance in minor units", body = i64),
         (status = 404, description = "Account not found", body = ledger_api::LedgerClientError),
         (status = 503, description = "Storage unavailable", body = ledger_api::LedgerClientError),
     ),
@@ -21,7 +21,7 @@ fn internal_err() -> LedgerApiError {
 )]
 pub async fn get_account_balance(
     data: web::Data<dyn LedgerClient>,
-    path: web::Path<i32>,
+    path: web::Path<i64>,
 ) -> Result<HttpResponse, LedgerApiError> {
     let id = path.into_inner();
     let result = web::block(move || data.get_account_balance(id))
@@ -34,9 +34,9 @@ pub async fn get_account_balance(
 #[utoipa::path(
     get,
     path = "/accounts/{id}/available-balance",
-    params(("id" = i32, Path, description = "Account ID")),
+    params(("id" = i64, Path, description = "Account ID")),
     responses(
-        (status = 200, description = "Available balance in fils", body = i64),
+        (status = 200, description = "Available balance in minor units", body = i64),
         (status = 404, description = "Account not found", body = ledger_api::LedgerClientError),
         (status = 503, description = "Storage unavailable", body = ledger_api::LedgerClientError),
     ),
@@ -44,7 +44,7 @@ pub async fn get_account_balance(
 )]
 pub async fn get_available_balance(
     data: web::Data<dyn LedgerClient>,
-    path: web::Path<i32>,
+    path: web::Path<i64>,
 ) -> Result<HttpResponse, LedgerApiError> {
     let id = path.into_inner();
     let result = web::block(move || data.get_available_balance(id))
@@ -57,7 +57,7 @@ pub async fn get_available_balance(
 #[utoipa::path(
     get,
     path = "/accounts/{id}/balance-history",
-    params(("id" = i32, Path, description = "Account ID")),
+    params(("id" = i64, Path, description = "Account ID")),
     responses(
         (status = 200, description = "Balance history", body = Vec<ledger_api::BalanceSnapshot>),
         (status = 503, description = "Storage unavailable", body = ledger_api::LedgerClientError),
@@ -66,7 +66,7 @@ pub async fn get_available_balance(
 )]
 pub async fn get_balance_history(
     data: web::Data<dyn LedgerClient>,
-    path: web::Path<i32>,
+    path: web::Path<i64>,
 ) -> Result<HttpResponse, LedgerApiError> {
     let id = path.into_inner();
     let result = web::block(move || data.get_balance_history(id))

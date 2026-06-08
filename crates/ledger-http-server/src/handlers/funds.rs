@@ -8,7 +8,7 @@ use crate::error::LedgerApiError;
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct BlockFundsRequest {
     pub client_id: String,
-    pub account_id: i32,
+    pub account_id: i64,
     pub amount: i64,
 }
 

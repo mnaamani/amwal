@@ -8,8 +8,8 @@ use crate::error::LedgerApiError;
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PostTransferRequest {
     pub client_id: String,
-    pub from_account_id: i32,
-    pub to_account_id: i32,
+    pub from_account_id: i64,
+    pub to_account_id: i64,
     pub amount: i64,
 }
 

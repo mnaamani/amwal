@@ -43,10 +43,10 @@ impl From<crate::TransferStatus> for TransferStatus {
 #[diesel(table_name = transfer_internal)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub(super) struct TransferInternal {
-    pub id: i32,
+    pub id: i64,
     pub client_id: String,
-    pub from_account_id: i32,
-    pub to_account_id: i32,
+    pub from_account_id: i64,
+    pub to_account_id: i64,
     pub amount: i64,
     pub status: TransferStatus,
     pub created_at: SystemTime,
@@ -70,7 +70,7 @@ impl From<TransferInternal> for crate::Transfer {
 #[diesel(table_name = transfer_internal)]
 pub(super) struct NewTransferInternal<'a> {
     pub client_id: &'a str,
-    pub from_account_id: i32,
-    pub to_account_id: i32,
+    pub from_account_id: i64,
+    pub to_account_id: i64,
     pub amount: i64,
 }

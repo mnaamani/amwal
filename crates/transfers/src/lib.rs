@@ -7,7 +7,7 @@ mod postgres;
 pub use postgres::TransferStore;
 
 /// Internal identifier for a transfer record. Opaque to callers.
-pub type TransferInternalId = i32;
+pub type TransferInternalId = i64;
 
 /// The lifecycle state of a transfer.
 ///
@@ -52,7 +52,7 @@ pub struct Transfer {
     pub client_id: String,
     pub from_account_id: AccountId,
     pub to_account_id: AccountId,
-    /// Amount in fils (smallest currency unit).
+    /// Amount in minor units.
     pub amount: i64,
     pub status: TransferStatus,
 }
@@ -64,7 +64,7 @@ pub struct TransferRequest {
     pub client_id: String,
     pub from_account_id: AccountId,
     pub to_account_id: AccountId,
-    /// Amount in fils. Must be positive and non-zero.
+    /// Amount in minor units. Must be positive and non-zero.
     pub amount: i64,
 }
 
@@ -147,7 +147,7 @@ fn ensure_available_funds<L: LedgerClient>(
 /// existing record is returned and `block_funds` is retried — which is itself
 /// idempotent. Any other existing status returns `TransferNotPending`.
 ///
-/// On success the sender's available balance is reduced by `amount` fils for
+/// On success the sender's available balance is reduced by `amount` minor units for
 /// the duration of the transfer. Call [`complete_transfer`] to post the journal
 /// entry and release the block, or [`cancel_transfer`] to just release it.
 pub fn initiate_transfer<L: LedgerClient>(

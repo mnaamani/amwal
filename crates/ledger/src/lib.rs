@@ -7,8 +7,8 @@ pub mod store;
 mod postgres;
 
 pub use domain::{
-    Account, AccountId, AccountType, Balance, JournalEntry, JournalEntryId, LedgerLine,
-    LedgerLineId, NewLedgerLineInput, Posting, TrialBalanceReport,
+    Account, AccountId, AccountType, Amount, JournalEntry, JournalEntryId, LedgerLine,
+    LedgerLineId, NewLedgerLineInput, Posting, PostingDirection, TrialBalanceReport,
 };
 pub use errors::LedgerError;
 pub use outbox::OutboxRelay;

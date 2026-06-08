@@ -44,7 +44,7 @@ pub async fn create_account(
 #[utoipa::path(
     post,
     path = "/accounts/{id}/activate",
-    params(("id" = i32, Path, description = "Account ID")),
+    params(("id" = i64, Path, description = "Account ID")),
     responses(
         (status = 200, description = "Account activated", body = ledger_api::AccountSummary),
         (status = 404, description = "Account not found", body = ledger_api::LedgerClientError),
@@ -54,7 +54,7 @@ pub async fn create_account(
 )]
 pub async fn activate_account(
     data: web::Data<dyn LedgerClient>,
-    path: web::Path<i32>,
+    path: web::Path<i64>,
 ) -> Result<HttpResponse, LedgerApiError> {
     let id = path.into_inner();
     let result = web::block(move || data.activate_account(id))
@@ -67,7 +67,7 @@ pub async fn activate_account(
 #[utoipa::path(
     get,
     path = "/accounts/{id}",
-    params(("id" = i32, Path, description = "Account ID")),
+    params(("id" = i64, Path, description = "Account ID")),
     responses(
         (status = 200, description = "Account found", body = ledger_api::AccountSummary),
         (status = 404, description = "Account not found"),
@@ -77,7 +77,7 @@ pub async fn activate_account(
 )]
 pub async fn get_account(
     data: web::Data<dyn LedgerClient>,
-    path: web::Path<i32>,
+    path: web::Path<i64>,
 ) -> Result<HttpResponse, LedgerApiError> {
     let id = path.into_inner();
     let result = web::block(move || data.get_account(id))

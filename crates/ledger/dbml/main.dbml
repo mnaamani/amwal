@@ -9,50 +9,54 @@ Enum "account_type" {
   "expense"
 }
 
+Enum "posting_direction" {
+  "debit"
+  "credit"
+}
+
 Table "accounts" {
-  "id" SERIAL [pk, increment]
-  "client_id" varchar(32) [not null, unique]
+  "id" bigserial [pk, increment]
+  "client_id" varchar(64) [not null, unique]
   "account_type" account_type [not null]
   "name" varchar [not null]
   "active" bool [not null, default: false]
-  "created_at" timestamp [not null, default: `now()`]
-  "updated_at" timestamp
+  // TigerBeetle-inspired 4-column balance: no separate balances table
+  "debits_posted" bigint [not null, default: 0]
+  "credits_posted" bigint [not null, default: 0]
+  "amount_pending" bigint [not null, default: 0]
+  "created_at" timestamptz [not null, default: `now()`]
 }
 
 Table "ledger_lines" {
-  "id" SERIAL [pk, increment]
-  "journal_entry_id" integer [not null, ref: > journal_entries.id]
-  "account" integer [not null, ref: - accounts.id]
-  "debit" bigint [not null, default: 0]
-  "credit" bigint [not null, default: 0]
-  "created_at" timestamp [not null, default: `now()`]
+  "id" bigserial [pk, increment]
+  "journal_entry_id" bigint [not null, ref: > journal_entries.id]
+  "account" bigint [not null, ref: - accounts.id]
+  "amount" bigint [not null]
+  "direction" posting_direction [not null]
+  "created_at" timestamptz [not null, default: `now()`]
 
   checks {
-    `debit >= 0 AND credit >= 0 AND (debit > 0) != (credit > 0)` [name: 'ledger_lines_valid_leg']
+    `amount > 0` [name: 'ledger_lines_positive_amount']
   }
+
+  note: 'Immutable — no UPDATE or DELETE allowed (enforced by trigger)'
 }
 
 Table "journal_entries" {
-  "id" SERIAL [pk, increment]
-  "client_id" varchar(32) [not null, unique]
-  "created_at" timestamp [not null, default: `now()`]
-  "updated_at" timestamp
-}
+  "id" bigserial [pk, increment]
+  "client_id" varchar(64) [not null, unique]
+  "created_at" timestamptz [not null, default: `now()`]
 
-Table balances {
-  "account_id" integer [pk, ref: - accounts.id]
-  "balance" bigint [not null, default: 0]
-  "updated_at" timestamp [not null]
+  note: 'Immutable — no UPDATE or DELETE allowed (enforced by trigger)'
 }
 
 Table account_blocks {
-  "id" SERIAL [pk, increment]
-  "client_id" varchar(32) [not null, unique]
-  "account_id" integer [not null, ref: - accounts.id]
+  "id" bigserial [pk, increment]
+  "client_id" varchar(64) [not null, unique]
+  "account_id" bigint [not null, ref: - accounts.id]
   "amount" bigint [not null]
   "released" bool [not null, default: false]
-  "created_at" timestamp [not null, default: `now()`]
-  "updated_at" timestamp
+  "created_at" timestamptz [not null, default: `now()`]
 }
 
 // Transactional outbox — events written atomically with the balance update and
@@ -62,8 +66,8 @@ Table outbox {
   "id" bigserial [pk, increment]
   "event_type" varchar [not null]
   "payload" jsonb [not null]
-  "created_at" timestamp [not null, default: `now()`]
-  "delivered_at" timestamp
+  "created_at" timestamptz [not null, default: `now()`]
+  "delivered_at" timestamptz
 
   indexes {
     (id) [name: 'outbox_undelivered', where: `delivered_at IS NULL`]

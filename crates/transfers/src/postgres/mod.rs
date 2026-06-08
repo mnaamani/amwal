@@ -40,8 +40,8 @@ impl TransferStore {
     pub(crate) fn insert_transfer(
         &self,
         client_id: &str,
-        from_account_id: i32,
-        to_account_id: i32,
+        from_account_id: i64,
+        to_account_id: i64,
         amount: i64,
     ) -> Result<crate::Transfer, crate::TransferError> {
         let mut conn = self.conn()?;
@@ -62,10 +62,9 @@ impl TransferStore {
         &self,
         client_id: &str,
     ) -> Result<crate::Transfer, crate::TransferError> {
-        use schema::transfer_internal::client_id as sql_client_id;
         let mut conn = self.conn()?;
         dsl::transfer_internal
-            .filter(sql_client_id.eq(client_id))
+            .filter(dsl::client_id.eq(client_id))
             .select(models::TransferInternal::as_select())
             .first(&mut *conn)
             .map(Into::into)
@@ -75,12 +74,6 @@ impl TransferStore {
             })
     }
 
-    /// Atomically transition the transfer from `Pending` to `new_status`,
-    /// returning the effective status after the attempt.
-    ///
-    /// - If the transfer was `Pending`, it is now `new_status` → returns `new_status`.
-    /// - If it was already `new_status` (retry), returns `new_status` unchanged.
-    /// - Any other current status is returned as-is; the caller decides the error.
     pub(crate) fn find_transfers_by_status(
         &self,
         status: crate::TransferStatus,
@@ -94,9 +87,11 @@ impl TransferStore {
             .map_err(|e| crate::TransferError::Storage(e.to_string()))
     }
 
+    /// Atomically transition the transfer from `Pending` to `new_status`,
+    /// returning the effective status after the attempt.
     pub(crate) fn claim_pending(
         &self,
-        id: i32,
+        id: i64,
         new_status: crate::TransferStatus,
     ) -> Result<crate::TransferStatus, crate::TransferError> {
         let mut conn = self.conn()?;
@@ -105,10 +100,7 @@ impl TransferStore {
                 .find(id)
                 .filter(dsl::status.eq(models::TransferStatus::Pending)),
         )
-        .set((
-            dsl::status.eq(models::TransferStatus::from(new_status)),
-            dsl::updated_at.eq(std::time::SystemTime::now()),
-        ))
+        .set(dsl::status.eq(models::TransferStatus::from(new_status)))
         .execute(&mut *conn)
         .map_err(|e| crate::TransferError::Storage(e.to_string()))?;
 
@@ -116,8 +108,6 @@ impl TransferStore {
             return Ok(new_status);
         }
 
-        // Row was not Pending — fetch the current status so the caller can
-        // distinguish "already in the target state (retry)" from "conflict".
         dsl::transfer_internal
             .find(id)
             .select(dsl::status)
@@ -131,15 +121,12 @@ impl TransferStore {
 
     pub(crate) fn set_transfer_status(
         &self,
-        id: i32,
+        id: i64,
         status: crate::TransferStatus,
     ) -> Result<(), crate::TransferError> {
         let mut conn = self.conn()?;
         diesel::update(dsl::transfer_internal.find(id))
-            .set((
-                dsl::status.eq(models::TransferStatus::from(status)),
-                dsl::updated_at.eq(std::time::SystemTime::now()),
-            ))
+            .set(dsl::status.eq(models::TransferStatus::from(status)))
             .execute(&mut *conn)
             .map(|_| ())
             .map_err(|e| crate::TransferError::Storage(e.to_string()))

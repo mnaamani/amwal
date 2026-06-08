@@ -1,8 +1,7 @@
 use diesel::prelude::*;
-use std::time::SystemTime;
 
 use super::models;
-use super::schema::{account_blocks, accounts::dsl as accts, balances};
+use super::schema::{account_blocks, accounts};
 use crate::domain::{Account, AccountBlock, AccountId, AccountType};
 use crate::errors::LedgerError;
 
@@ -12,13 +11,12 @@ pub(super) fn insert_account(
     name: &str,
     account_type: AccountType,
 ) -> Result<Account, LedgerError> {
-    let new_account = models::NewAccount {
-        client_id,
-        name,
-        account_type: account_type.into(),
-    };
-    diesel::insert_into(accts::accounts)
-        .values(&new_account)
+    diesel::insert_into(accounts::table)
+        .values(&models::NewAccount {
+            client_id,
+            name,
+            account_type: account_type.into(),
+        })
         .returning(models::Account::as_returning())
         .get_result(conn)
         .map(Into::into)
@@ -29,32 +27,19 @@ pub(super) fn set_account_active(
     conn: &mut PgConnection,
     id: AccountId,
 ) -> Result<Account, LedgerError> {
-    conn.transaction::<Account, LedgerError, _>(|conn| {
-        let account: models::Account = diesel::update(accts::accounts.find(id))
-            .set((
-                accts::active.eq(true),
-                accts::updated_at.eq(SystemTime::now()),
-            ))
-            .returning(models::Account::as_returning())
-            .get_result(conn)?;
-
-        diesel::insert_into(balances::table)
-            .values(models::NewBalance {
-                account_id: id,
-                balance: 0,
-            })
-            .on_conflict_do_nothing()
-            .execute(conn)?;
-
-        Ok(account.into())
-    })
+    diesel::update(accounts::table.find(id))
+        .set(accounts::active.eq(true))
+        .returning(models::Account::as_returning())
+        .get_result(conn)
+        .map(Into::into)
+        .map_err(LedgerError::from)
 }
 
 pub(super) fn find_account(
     conn: &mut PgConnection,
     id: AccountId,
 ) -> Result<Option<Account>, LedgerError> {
-    accts::accounts
+    accounts::table
         .find(id)
         .select(models::Account::as_select())
         .first(conn)
@@ -67,8 +52,8 @@ pub(super) fn find_accounts_by_ids(
     conn: &mut PgConnection,
     ids: &[AccountId],
 ) -> Result<Vec<Account>, LedgerError> {
-    accts::accounts
-        .filter(accts::id.eq_any(ids))
+    accounts::table
+        .filter(accounts::id.eq_any(ids))
         .select(models::Account::as_select())
         .load(conn)
         .map(|v| v.into_iter().map(Into::into).collect())
@@ -76,38 +61,21 @@ pub(super) fn find_accounts_by_ids(
 }
 
 pub(super) fn list_active_accounts(conn: &mut PgConnection) -> Result<Vec<Account>, LedgerError> {
-    accts::accounts
-        .filter(accts::active.eq(true))
+    accounts::table
+        .filter(accounts::active.eq(true))
         .select(models::Account::as_select())
         .load(conn)
         .map(|v| v.into_iter().map(Into::into).collect())
         .map_err(LedgerError::from)
 }
 
-pub(super) fn sum_unreleased_blocks(
-    conn: &mut PgConnection,
-    account_id: AccountId,
-) -> Result<i64, LedgerError> {
-    use diesel::dsl::sql;
-    use diesel::sql_types::BigInt;
-    account_blocks::table
-        .filter(account_blocks::account_id.eq(account_id))
-        .filter(account_blocks::released.eq(false))
-        .select(sql::<BigInt>("COALESCE(SUM(amount), 0)"))
-        .first::<i64>(conn)
-        .map_err(LedgerError::from)
-}
-
 /// Atomically check available balance and insert a block.
 ///
 /// Idempotent on `client_id`: if a block with the same `client_id` already
-/// exists the existing row is returned without re-checking the balance. This
-/// makes `initiate_transfer` safe to retry — a second call returns the
-/// already-placed block rather than failing or double-blocking.
+/// exists the existing row is returned without re-checking the balance.
 ///
-/// The idempotency check happens inside the transaction so that two concurrent
-/// retries cannot both pass the check and race to insert — the losing INSERT
-/// gets a UniqueViolation which is caught and resolved with a follow-up fetch.
+/// Uses `SELECT ... FOR UPDATE` on the account row to serialize concurrent
+/// block placements so the available-balance check is race-free.
 pub(super) fn apply_account_block(
     conn: &mut PgConnection,
     client_id: &str,
@@ -115,18 +83,20 @@ pub(super) fn apply_account_block(
     amount: i64,
 ) -> Result<AccountBlock, LedgerError> {
     conn.transaction::<AccountBlock, LedgerError, _>(|conn| {
-        let balance: i64 = balances::table
+        let acct: models::Account = accounts::table
             .find(account_id)
-            .select(balances::balance)
+            .select(models::Account::as_select())
+            .for_update()
             .first(conn)?;
-        let blocked = sum_unreleased_blocks(conn, account_id)?;
-        let available = balance - blocked;
+
+        let available = acct.available_balance();
         if available < amount {
             return Err(LedgerError::InsufficientFunds {
                 available,
                 requested: amount,
             });
         }
+
         let insert_result = diesel::insert_into(account_blocks::table)
             .values(models::NewAccountBlock {
                 client_id,
@@ -137,7 +107,12 @@ pub(super) fn apply_account_block(
             .get_result(conn);
 
         match insert_result {
-            Ok(block) => Ok(block.into()),
+            Ok(block) => {
+                diesel::update(accounts::table.find(account_id))
+                    .set(accounts::amount_pending.eq(accounts::amount_pending + amount))
+                    .execute(conn)?;
+                Ok(block.into())
+            }
             Err(diesel::result::Error::DatabaseError(
                 diesel::result::DatabaseErrorKind::UniqueViolation,
                 _,
@@ -153,34 +128,35 @@ pub(super) fn apply_account_block(
 }
 
 /// If the block is already released the existing row is returned unchanged.
+/// Decrements `amount_pending` on the account atomically with the release.
 pub(super) fn release_account_block(
     conn: &mut PgConnection,
     client_id: &str,
 ) -> Result<AccountBlock, LedgerError> {
-    let now = SystemTime::now();
-    let result = diesel::update(
-        account_blocks::table
-            .filter(account_blocks::client_id.eq(client_id))
-            .filter(account_blocks::released.eq(false)),
-    )
-    .set((
-        account_blocks::released.eq(true),
-        account_blocks::updated_at.eq(now),
-    ))
-    .returning(models::AccountBlock::as_returning())
-    .get_result(conn);
+    conn.transaction::<AccountBlock, LedgerError, _>(|conn| {
+        let result = diesel::update(
+            account_blocks::table
+                .filter(account_blocks::client_id.eq(client_id))
+                .filter(account_blocks::released.eq(false)),
+        )
+        .set(account_blocks::released.eq(true))
+        .returning(models::AccountBlock::as_returning())
+        .get_result(conn);
 
-    match result {
-        Ok(block) => Ok(block.into()),
-        // NotFound means either already released or the client_id doesn't exist.
-        // Fetch the row to distinguish: if it exists (released=true) we return
-        // it as a no-op success; if it's genuinely missing we propagate the error.
-        Err(diesel::result::Error::NotFound) => account_blocks::table
-            .filter(account_blocks::client_id.eq(client_id))
-            .select(models::AccountBlock::as_select())
-            .first(conn)
-            .map(Into::into)
-            .map_err(LedgerError::from),
-        Err(e) => Err(e.into()),
-    }
+        match result {
+            Ok(block) => {
+                diesel::update(accounts::table.find(block.account_id))
+                    .set(accounts::amount_pending.eq(accounts::amount_pending - block.amount))
+                    .execute(conn)?;
+                Ok(block.into())
+            }
+            Err(diesel::result::Error::NotFound) => account_blocks::table
+                .filter(account_blocks::client_id.eq(client_id))
+                .select(models::AccountBlock::as_select())
+                .first(conn)
+                .map(Into::into)
+                .map_err(LedgerError::from),
+            Err(e) => Err(e.into()),
+        }
+    })
 }

@@ -1,4 +1,4 @@
-use super::schema::{account_blocks, accounts, balances, journal_entries, ledger_lines, outbox};
+use super::schema::{account_blocks, accounts, journal_entries, ledger_lines, outbox};
 use diesel::prelude::*;
 use std::time::SystemTime;
 
@@ -38,16 +38,57 @@ impl From<domain::AccountType> for AccountType {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Copy, Clone, diesel_derive_enum::DbEnum)]
+#[ExistingTypePath = "crate::postgres::schema::sql_types::PostingDirection"]
+pub(super) enum PostingDirection {
+    Debit,
+    Credit,
+}
+
+impl From<PostingDirection> for domain::PostingDirection {
+    fn from(d: PostingDirection) -> Self {
+        match d {
+            PostingDirection::Debit => domain::PostingDirection::Debit,
+            PostingDirection::Credit => domain::PostingDirection::Credit,
+        }
+    }
+}
+
+impl From<domain::PostingDirection> for PostingDirection {
+    fn from(d: domain::PostingDirection) -> Self {
+        match d {
+            domain::PostingDirection::Debit => PostingDirection::Debit,
+            domain::PostingDirection::Credit => PostingDirection::Credit,
+        }
+    }
+}
+
 #[derive(Queryable, Selectable, Identifiable)]
 #[diesel(table_name = accounts)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub(super) struct Account {
-    pub id: i32,
+    pub id: i64,
     pub client_id: String,
     pub account_type: AccountType,
     pub name: String,
     pub active: bool,
+    pub debits_posted: i64,
+    pub credits_posted: i64,
+    pub amount_pending: i64,
     pub created_at: SystemTime,
+}
+
+impl Account {
+    pub fn posted_balance(&self) -> i64 {
+        match self.account_type {
+            AccountType::Asset | AccountType::Expense => self.debits_posted - self.credits_posted,
+            _ => self.credits_posted - self.debits_posted,
+        }
+    }
+
+    pub fn available_balance(&self) -> i64 {
+        self.posted_balance() - self.amount_pending
+    }
 }
 
 impl From<Account> for domain::Account {
@@ -58,6 +99,9 @@ impl From<Account> for domain::Account {
             account_type: a.account_type.into(),
             active: a.active,
             name: a.name,
+            debits_posted: a.debits_posted,
+            credits_posted: a.credits_posted,
+            amount_pending: a.amount_pending,
             created_at: a.created_at,
         }
     }
@@ -75,10 +119,9 @@ pub(super) struct NewAccount<'a> {
 #[diesel(table_name = journal_entries)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub(super) struct JournalEntry {
-    pub id: i32,
+    pub id: i64,
     pub client_id: String,
     pub created_at: SystemTime,
-    pub updated_at: Option<SystemTime>,
 }
 
 impl From<JournalEntry> for domain::JournalEntry {
@@ -87,7 +130,6 @@ impl From<JournalEntry> for domain::JournalEntry {
             id: e.id,
             client_id: e.client_id,
             created_at: e.created_at,
-            updated_at: e.updated_at,
         }
     }
 }
@@ -102,11 +144,11 @@ pub(super) struct NewJournalEntry<'a> {
 #[diesel(table_name = ledger_lines)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub(super) struct LedgerLine {
-    pub id: i32,
-    pub journal_entry_id: i32,
-    pub account: i32,
-    pub debit: i64,
-    pub credit: i64,
+    pub id: i64,
+    pub journal_entry_id: i64,
+    pub account: i64,
+    pub amount: i64,
+    pub direction: PostingDirection,
     pub created_at: SystemTime,
 }
 
@@ -116,8 +158,8 @@ impl From<LedgerLine> for domain::LedgerLine {
             id: l.id,
             journal_entry_id: l.journal_entry_id,
             account: l.account,
-            debit: l.debit,
-            credit: l.credit,
+            amount: l.amount,
+            direction: l.direction.into(),
             created_at: l.created_at,
         }
     }
@@ -126,50 +168,22 @@ impl From<LedgerLine> for domain::LedgerLine {
 #[derive(Insertable)]
 #[diesel(table_name = ledger_lines)]
 pub(super) struct NewLedgerLine {
-    pub journal_entry_id: i32,
-    pub account: i32,
-    pub debit: i64,
-    pub credit: i64,
-}
-
-#[derive(Queryable, Selectable, Identifiable)]
-#[diesel(table_name = balances)]
-#[diesel(primary_key(account_id))]
-#[diesel(check_for_backend(diesel::pg::Pg))]
-pub(super) struct Balance {
-    pub account_id: i32,
-    pub balance: i64,
-    pub updated_at: SystemTime,
-}
-
-impl From<Balance> for domain::Balance {
-    fn from(b: Balance) -> Self {
-        domain::Balance {
-            account_id: b.account_id,
-            balance: b.balance,
-            updated_at: b.updated_at,
-        }
-    }
-}
-
-#[derive(Insertable)]
-#[diesel(table_name = balances)]
-pub(super) struct NewBalance {
-    pub account_id: i32,
-    pub balance: i64,
+    pub journal_entry_id: i64,
+    pub account: i64,
+    pub amount: i64,
+    pub direction: PostingDirection,
 }
 
 #[derive(Queryable, Selectable, Identifiable)]
 #[diesel(table_name = account_blocks)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub(super) struct AccountBlock {
-    pub id: i32,
+    pub id: i64,
     pub client_id: String,
-    pub account_id: i32,
+    pub account_id: i64,
     pub amount: i64,
     pub released: bool,
     pub created_at: SystemTime,
-    pub updated_at: Option<SystemTime>,
 }
 
 impl From<AccountBlock> for domain::AccountBlock {
@@ -189,7 +203,7 @@ impl From<AccountBlock> for domain::AccountBlock {
 #[diesel(table_name = account_blocks)]
 pub(super) struct NewAccountBlock<'a> {
     pub client_id: &'a str,
-    pub account_id: i32,
+    pub account_id: i64,
     pub amount: i64,
 }
 

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::num::NonZeroU64;
 
 use ledger_api::{
@@ -8,7 +7,7 @@ use ledger_api::{
 };
 
 use crate::domain::{
-    Account, AccountId, AccountType, Balance, JournalEntry, NewLedgerLineInput, Posting,
+    Account, AccountId, AccountType, JournalEntry, NewLedgerLineInput, Posting, PostingDirection,
     TrialBalanceReport,
 };
 use crate::errors::LedgerError;
@@ -17,7 +16,6 @@ use crate::store::LedgerStore;
 
 /// Business logic layer. Wraps any [`LedgerStore`] and adds:
 /// - input validation (structural rules, double-entry invariant)
-/// - balance delta computation (account-type-aware)
 /// - the external [`LedgerClient`] interface consumed by other services
 ///
 /// Use `Arc<LedgerService<S>>` to share a single instance across callers.
@@ -104,29 +102,7 @@ impl<S: LedgerStore> LedgerService<S> {
             }
         }
 
-        // ── Balance delta computation ──────────────────────────────────────
-        // Debit-nature (Asset, Expense): delta = debit − credit
-        // Credit-nature (Liability, Equity, Revenue): delta = credit − debit
-        let type_map: HashMap<AccountId, AccountType> = found_accounts
-            .iter()
-            .map(|a| (a.id, a.account_type))
-            .collect();
-        let mut deltas: HashMap<AccountId, i64> = HashMap::new();
-        for leg in &legs {
-            let account_type = type_map[&leg.account_id];
-            let delta = match (&leg.posting, account_type) {
-                (Posting::Debit(v), AccountType::Asset | AccountType::Expense) => v.get() as i64,
-                (Posting::Credit(v), AccountType::Asset | AccountType::Expense) => {
-                    -(v.get() as i64)
-                }
-                (Posting::Credit(v), _) => v.get() as i64,
-                (Posting::Debit(v), _) => -(v.get() as i64),
-            };
-            *deltas.entry(leg.account_id).or_insert(0) += delta;
-        }
-
-        let entry = self.store.persist_journal_entry(client_id, &legs, deltas)?;
-        Ok(entry)
+        self.store.persist_journal_entry(client_id, &legs)
     }
 
     pub fn post_transfer(
@@ -197,14 +173,18 @@ impl<S: LedgerStore> LedgerService<S> {
             .map(|_| ())
     }
 
-    pub fn get_account_balance(&self, account_id: AccountId) -> Result<Balance, LedgerError> {
-        self.store.find_balance(account_id)
+    pub fn get_account_balance(&self, account_id: AccountId) -> Result<i64, LedgerError> {
+        self.store
+            .find_account(account_id)?
+            .map(|a| a.posted_balance())
+            .ok_or(LedgerError::AccountNotFound(account_id))
     }
 
     pub fn get_available_balance(&self, account_id: AccountId) -> Result<i64, LedgerError> {
-        let balance = self.store.find_balance(account_id)?.balance;
-        let blocked = self.store.sum_unreleased_blocks(account_id)?;
-        Ok(balance - blocked)
+        self.store
+            .find_account(account_id)?
+            .map(|a| a.available_balance())
+            .ok_or(LedgerError::AccountNotFound(account_id))
     }
 
     pub fn trial_balance(&self) -> Result<TrialBalanceReport, LedgerError> {
@@ -274,10 +254,7 @@ impl<S: LedgerStore> LedgerClient for LedgerService<S> {
     }
 
     fn get_account_balance(&self, id: ApiAccountId) -> Result<i64, LedgerClientError> {
-        self.store
-            .find_balance(id)
-            .map(|b| b.balance)
-            .map_err(Into::into)
+        LedgerService::get_account_balance(self, id).map_err(Into::into)
     }
 
     fn get_balance_history(
@@ -295,9 +272,15 @@ impl<S: LedgerStore> LedgerClient for LedgerService<S> {
         let snapshots = lines
             .into_iter()
             .map(|line| {
-                let delta = match account.account_type {
-                    AccountType::Asset | AccountType::Expense => line.debit - line.credit,
-                    _ => line.credit - line.debit,
+                let delta = match (line.direction, account.account_type) {
+                    (PostingDirection::Debit, AccountType::Asset | AccountType::Expense) => {
+                        line.amount
+                    }
+                    (PostingDirection::Debit, _) => -line.amount,
+                    (PostingDirection::Credit, AccountType::Asset | AccountType::Expense) => {
+                        -line.amount
+                    }
+                    (PostingDirection::Credit, _) => line.amount,
                 };
                 running += delta;
                 ledger_api::BalanceSnapshot {
@@ -416,19 +399,17 @@ impl From<LedgerError> for LedgerClientError {
 mod tests {
     use super::*;
     use crate::domain::{
-        Account, AccountBlock, AccountId, Balance, JournalEntry, LedgerLine, NewLedgerLineInput,
-        Posting,
+        Account, AccountBlock, AccountId, JournalEntry, LedgerLine, NewLedgerLineInput, Posting,
+        PostingDirection,
     };
     use crate::errors::LedgerError;
     use crate::store::LedgerStore;
-    use std::collections::HashMap;
     use std::num::NonZeroU64;
     use std::time::SystemTime;
 
     // ── MockStore ─────────────────────────────────────────────────────────────
 
     struct MockStore {
-        // (id, account_type, active)
         accounts: Vec<(AccountId, AccountType, bool)>,
     }
 
@@ -444,6 +425,9 @@ mod tests {
                 account_type,
                 active,
                 name: format!("Account {id}"),
+                debits_posted: 0,
+                credits_posted: 0,
+                amount_pending: 0,
                 created_at: SystemTime::UNIX_EPOCH,
             }
         }
@@ -488,18 +472,12 @@ mod tests {
             &self,
             client_id: &str,
             _legs: &[NewLedgerLineInput],
-            _deltas: HashMap<AccountId, i64>,
         ) -> Result<JournalEntry, LedgerError> {
             Ok(JournalEntry {
                 id: 1,
                 client_id: client_id.to_string(),
                 created_at: SystemTime::UNIX_EPOCH,
-                updated_at: None,
             })
-        }
-
-        fn find_balance(&self, _: AccountId) -> Result<Balance, LedgerError> {
-            unimplemented!()
         }
 
         fn find_ledger_lines(&self, _: AccountId) -> Result<Vec<LedgerLine>, LedgerError> {
@@ -507,10 +485,6 @@ mod tests {
         }
 
         fn aggregate_balances_by_type(&self) -> Result<Vec<(AccountType, i64)>, LedgerError> {
-            unimplemented!()
-        }
-
-        fn sum_unreleased_blocks(&self, _: AccountId) -> Result<i64, LedgerError> {
             unimplemented!()
         }
 
@@ -606,7 +580,6 @@ mod tests {
 
     #[test]
     fn post_journal_entry_missing_account_returns_error() {
-        // Account 2 is not in the store.
         let result = svc(vec![(1, AccountType::Asset, true)]).post_journal_entry(
             "je-1",
             vec![

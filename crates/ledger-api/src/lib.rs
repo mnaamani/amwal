@@ -3,9 +3,11 @@ use std::str::FromStr;
 use std::time::SystemTime;
 
 /// Opaque account identifier — mirrors ledger's internal AccountId.
-pub type AccountId = i32;
+pub type AccountId = i64;
 /// Opaque journal entry identifier returned after a successful posting.
-pub type JournalEntryId = i32;
+pub type JournalEntryId = i64;
+/// Monetary amount expressed in the currency's minor unit (cents, pence, halala, …).
+pub type Amount = i64;
 
 /// The accounting classification of an account, which determines how debits
 /// and credits affect its balance.
@@ -68,8 +70,8 @@ pub struct AccountSummary {
 /// One side of a double-entry journal posting submitted via [`LedgerClient`].
 ///
 /// This is the API-layer equivalent of the domain's `Posting` type.
-/// Amounts are in the smallest currency unit (e.g. fils for AED) and must
-/// be non-zero — use [`NonZeroU64`] to enforce this at construction time.
+/// Amounts are in the currency's minor unit and must be non-zero — use
+/// [`NonZeroU64`] to enforce this at construction time.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "direction", content = "amount")]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -86,8 +88,8 @@ pub struct BalanceSnapshot {
     #[serde(with = "system_time_serde")]
     #[cfg_attr(feature = "openapi", schema(value_type = u64, example = 1700000000000u64))]
     pub timestamp: SystemTime,
-    /// Running balance in the smallest currency unit (e.g. fils for AED).
-    pub balance: i64,
+    /// Running balance in the currency's minor unit.
+    pub balance: Amount,
 }
 
 /// A single leg of a journal entry submitted to the ledger.
@@ -112,15 +114,18 @@ pub enum LedgerClientError {
     AccountNotActive(AccountId),
     /// The journal entry was rejected because total debits ≠ total credits.
     ImbalancedEntry {
-        total_debits: i64,
-        total_credits: i64,
+        total_debits: Amount,
+        total_credits: Amount,
     },
     /// A structural or business-rule validation failure (malformed input).
     InvalidRequest(String),
     /// A storage or infrastructure error — safe to retry.
     Unavailable(String),
     /// The account's available balance (posted minus blocked) is too low.
-    InsufficientFunds { available: i64, requested: i64 },
+    InsufficientFunds {
+        available: Amount,
+        requested: Amount,
+    },
     /// The two accounts have different accounting natures (one debit-normal,
     /// one credit-normal) and cannot participate in a direct transfer.
     AccountsIncompatible,
@@ -177,11 +182,11 @@ pub trait LedgerClient: Send + Sync {
     /// The posted balance: the sum of all committed journal entries.
     /// Does **not** subtract unreleased fund blocks — use
     /// [`LedgerClient::get_available_balance`] for that.
-    fn get_account_balance(&self, id: AccountId) -> Result<i64, LedgerClientError>;
+    fn get_account_balance(&self, id: AccountId) -> Result<Amount, LedgerClientError>;
 
     /// Posted balance minus the sum of all unreleased fund blocks on the account.
     /// This is the amount the account holder can actually spend right now.
-    fn get_available_balance(&self, id: AccountId) -> Result<i64, LedgerClientError>;
+    fn get_available_balance(&self, id: AccountId) -> Result<Amount, LedgerClientError>;
 
     /// Post a balanced double-entry journal entry. The sum of all Debit legs
     /// must equal the sum of all Credit legs, and every account must be active.
@@ -196,10 +201,10 @@ pub trait LedgerClient: Send + Sync {
 
     // -- Funds blocking --
 
-    /// Reserve `amount` fils on `account_id` so they cannot be spent while a
-    /// transfer is in flight. The block is identified by `client_id` and must
-    /// be released (via [`LedgerClient::release_funds`]) or the transfer completed before the
-    /// funds are freed.
+    /// Reserve `amount` minor units on `account_id` so they cannot be spent
+    /// while a transfer is in flight. The block is identified by `client_id`
+    /// and must be released (via [`LedgerClient::release_funds`]) or the
+    /// transfer completed before the funds are freed.
     ///
     /// Returns `InsufficientFunds` if `available_balance < amount`.
     /// Idempotent: a duplicate `client_id` returns the existing block.
@@ -207,11 +212,11 @@ pub trait LedgerClient: Send + Sync {
         &self,
         client_id: &str,
         account_id: AccountId,
-        amount: i64,
+        amount: Amount,
     ) -> Result<(), LedgerClientError>;
 
     /// Release the fund block identified by `block_client_id`, making those
-    /// fils available again. No-op if the block was already released.
+    /// minor units available again. No-op if the block was already released.
     fn release_funds(&self, block_client_id: &str) -> Result<(), LedgerClientError>;
 
     // -- History --
@@ -235,7 +240,7 @@ pub trait LedgerClient: Send + Sync {
         client_id: &str,
         from_account_id: AccountId,
         to_account_id: AccountId,
-        amount: i64,
+        amount: Amount,
     ) -> Result<(), LedgerClientError>;
 }
 

@@ -161,7 +161,7 @@ impl LedgerClient for LedgerHttpClient {
         #[derive(serde::Serialize)]
         struct Body<'a> {
             client_id: &'a str,
-            account_id: i32,
+            account_id: i64,
             amount: i64,
         }
         self.agent
@@ -196,8 +196,8 @@ impl LedgerClient for LedgerHttpClient {
         #[derive(serde::Serialize)]
         struct Body<'a> {
             client_id: &'a str,
-            from_account_id: i32,
-            to_account_id: i32,
+            from_account_id: i64,
+            to_account_id: i64,
             amount: i64,
         }
         self.agent

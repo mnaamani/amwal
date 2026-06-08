@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use dotenvy::dotenv;
@@ -13,8 +11,7 @@ mod schema;
 use schema::outbox::dsl as outbox_dsl;
 
 use crate::domain::{
-    Account, AccountBlock, AccountId, AccountType, Balance, JournalEntry, LedgerLine,
-    NewLedgerLineInput,
+    Account, AccountBlock, AccountId, AccountType, JournalEntry, LedgerLine, NewLedgerLineInput,
 };
 use crate::errors::LedgerError;
 use crate::store::LedgerStore;
@@ -22,8 +19,7 @@ use crate::store::LedgerStore;
 type PgPool = Pool<ConnectionManager<PgConnection>>;
 type PgConn = PooledConnection<ConnectionManager<PgConnection>>;
 
-// Required by diesel's `connection.transaction()`, which bounds E: From<diesel::result::Error>.
-// Placed here to keep the diesel dependency out of the public errors module.
+// Required by diesel's `connection.transaction()`.
 impl From<diesel::result::Error> for LedgerError {
     fn from(e: diesel::result::Error) -> Self {
         LedgerError::Storage(e.to_string())
@@ -65,8 +61,7 @@ impl PostgresLedgerStore {
             .map_err(|e| LedgerError::Storage(e.to_string()))
     }
 
-    /// Fetch undelivered outbox events in insertion order. `limit` bounds the
-    /// batch size so the relay never tries to publish an unbounded set at once.
+    /// Fetch undelivered outbox events in insertion order.
     pub(crate) fn fetch_pending_outbox(&self, limit: i64) -> Result<Vec<OutboxItem>, LedgerError> {
         let mut conn = self.conn()?;
         outbox_dsl::outbox
@@ -132,15 +127,9 @@ impl LedgerStore for PostgresLedgerStore {
         &self,
         client_id: &str,
         legs: &[NewLedgerLineInput],
-        balance_deltas: HashMap<AccountId, i64>,
     ) -> Result<JournalEntry, LedgerError> {
         let mut conn = self.conn()?;
-        journal_entries::persist_journal_entry(&mut conn, client_id, legs, balance_deltas)
-    }
-
-    fn find_balance(&self, account_id: AccountId) -> Result<Balance, LedgerError> {
-        let mut conn = self.conn()?;
-        journal_entries::find_balance(&mut conn, account_id)
+        journal_entries::persist_journal_entry(&mut conn, client_id, legs)
     }
 
     fn find_ledger_lines(&self, account_id: AccountId) -> Result<Vec<LedgerLine>, LedgerError> {
@@ -151,11 +140,6 @@ impl LedgerStore for PostgresLedgerStore {
     fn aggregate_balances_by_type(&self) -> Result<Vec<(AccountType, i64)>, LedgerError> {
         let mut conn = self.conn()?;
         journal_entries::aggregate_balances_by_type(&mut conn)
-    }
-
-    fn sum_unreleased_blocks(&self, account_id: AccountId) -> Result<i64, LedgerError> {
-        let mut conn = self.conn()?;
-        accounts::sum_unreleased_blocks(&mut conn, account_id)
     }
 
     fn apply_account_block(

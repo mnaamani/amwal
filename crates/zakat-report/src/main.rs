@@ -54,12 +54,12 @@ struct NisabValues {
     values: HashMap<String, f64>,
 }
 
-/// Fetch the current nisab threshold from nisab.tahababa.com in AED fils.
+/// Fetch the current nisab threshold from nisab.tahababa.com in AED minor units.
 ///
 /// The API publishes live gold/silver spot prices for 37 currencies, updated
 /// up to 6× per day. Values are in the major currency unit; we multiply by 100
-/// to convert to fils to match the ledger's integer money representation.
-fn fetch_nisab_fils(madhab: Madhab, standard: NisabStandard) -> anyhow::Result<i64> {
+/// to convert to minor units to match the ledger's integer money representation.
+fn fetch_nisab(madhab: Madhab, standard: NisabStandard) -> anyhow::Result<i64> {
     let resp: ApiResponse = ureq::get("https://nisab.tahababa.com/nisab.json")
         .call()?
         .into_json()?;
@@ -85,15 +85,15 @@ fn fetch_nisab_fils(madhab: Madhab, standard: NisabStandard) -> anyhow::Result<i
 // ── Report data ───────────────────────────────────────────────────────────────
 
 struct AccountData {
-    id: i32,
+    id: i64,
     name: String,
     history: Vec<BalanceSnapshot>,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn fmt_aed(fils: i64) -> String {
-    format!("AED {:.2}", fils as f64 / 100.0)
+fn fmt_aed(amount: i64) -> String {
+    format!("AED {:.2}", amount as f64 / 100.0)
 }
 
 fn fmt_date(t: std::time::SystemTime) -> String {
@@ -109,8 +109,8 @@ fn main() -> anyhow::Result<()> {
     let standard = NisabStandard::Gold;
 
     println!("Fetching nisab ({madhab:?} / {standard:?})...");
-    let nisab_fils = fetch_nisab_fils(madhab, standard)?;
-    println!("Nisab: {} ({nisab_fils} fils)\n", fmt_aed(nisab_fils));
+    let nisab = fetch_nisab(madhab, standard)?;
+    println!("Nisab: {} ({nisab} minor units)\n", fmt_aed(nisab));
 
     let ledger = LedgerService::from_env();
     let accounts = ledger
@@ -144,7 +144,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut due_count = 0usize;
     for ad in &account_data {
-        let Some(a) = assess_account(&ad.history, nisab_fils) else {
+        let Some(a) = assess_account(&ad.history, nisab) else {
             continue;
         };
         due_count += 1;
@@ -171,17 +171,17 @@ fn main() -> anyhow::Result<()> {
     println!(" ZAKAT ARREARS (ALL UNPAID PERIODS)");
     println!("══════════════════════════════════════════════\n");
 
-    let mut grand_total_fils: i64 = 0;
+    let mut grand_total: i64 = 0;
     let mut arrears_count = 0usize;
 
     for ad in &account_data {
-        let periods: Vec<ZakatAssessment> = assess_all_periods(&ad.history, nisab_fils);
+        let periods: Vec<ZakatAssessment> = assess_all_periods(&ad.history, nisab);
         if periods.is_empty() {
             continue;
         }
 
         let account_total: i64 = periods.iter().map(|p| p.zakat_due).sum();
-        grand_total_fils += account_total;
+        grand_total += account_total;
         arrears_count += 1;
 
         println!("Account #{} — {}", ad.id, ad.name);
@@ -210,7 +210,7 @@ fn main() -> anyhow::Result<()> {
         println!("══════════════════════════════════════════════");
         println!(
             " GRAND TOTAL (all accounts, all years) : {}",
-            fmt_aed(grand_total_fils)
+            fmt_aed(grand_total)
         );
         println!("══════════════════════════════════════════════");
         println!();

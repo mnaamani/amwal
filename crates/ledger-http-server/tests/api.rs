@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn stub_account(id: i32, active: bool) -> AccountSummary {
+fn stub_account(id: i64, active: bool) -> AccountSummary {
     AccountSummary {
         id,
         active,
